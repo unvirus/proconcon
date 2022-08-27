@@ -1220,7 +1220,7 @@ int main(int argc, char *argv[])
     thMouseCreated = 1;
 
 EXIT:
-    if (Processing)
+    while (Processing)
     {
         //動作中は待つ
         sleep(3);
