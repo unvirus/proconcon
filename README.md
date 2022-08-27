@@ -25,8 +25,8 @@ gcc proconcon.c -o proconcon.out -l pthread -lm  -O3 -Wall<br>
 ラズベリーパイをUSBケーブルでNintendo SWITCHに接続する。<br>
 <br>
 起動方法<br>
-sudo ./load_procon.sh
-sudo ./proconcon.out hidraw3 event2 event0
+sudo ./load_procon.sh<br>
+sudo ./proconcon.out hidraw3 event2 event0<br>
 <br>
 proconcon.out [Procon] [Keybord] [Mouse]の順に指定する。<br>
 <br>
