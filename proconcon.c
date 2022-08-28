@@ -51,8 +51,9 @@ gcc proconcon.c -o proconcon.out -l pthread -lm  -O3 -Wall
 #define CENTER_RY_AXIS			(1920)
 
 #define MOUSE_READ_COUNTER		(3)		//指定した回数に達した場合マウス操作がされていない事を示す
-#define Y_ANGLE_UPPPER_LIMIT	(3300)	//Y上限
-#define Y_ANGLE_LOWER_LIMIT		(-1900)	//Y下限
+#define Y_ANGLE_UPPPER_LIMIT	(4000)	//Y上限
+#define Y_ANGLE_LOWER_LIMIT		(-2200)	//Y下限
+#define Y_ANGLE_DEFAULT         (0)  //Y角度、コントローラー平置き、0度
 
 #define SLOW_MOVEING 			(1600)	//イカダッシュでしぶきが出ない、上下左右、スティック入力値に連動
 #define SLOW_MOVEING_OTHER		(1100)	//イカダッシュでしぶきが出ない、斜め、スティック入力値に連動
@@ -164,6 +165,7 @@ int PadLoopCnt;
 int BannerX;
 int BannerOffs;
 int ProtDir;
+int ViewAngleReset;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -781,6 +783,7 @@ void StickDrawCircle(ProConData *pPad)
 void ProConDataModify(ProConData *pPad)
 {
     ProConGyroData gyro;
+    //ProConGyroData test;
 
     //key
     if (YHold)
@@ -840,6 +843,12 @@ void ProConDataModify(ProConData *pPad)
     {
         //ジャンプ
         pPad->B = 1;
+    }
+
+    if (KeyMap[KEY_Q] == 1)
+    {
+         pPad->Y = 1;
+         ViewAngleReset = 1;
     }
 
     //L Stick X
@@ -969,12 +978,14 @@ void ProConDataModify(ProConData *pPad)
     pthread_mutex_lock(&MouseMtx);
     memset(&gyro, 0, sizeof(gyro));
 
+    //memcpy(&test, &pPad->GyroData[0], sizeof(test));
+
     //X角度、Z角度変化しない
     gyro.Z_Angle = 4096;
 
     //Y角度合算
     YTotal += (int32_t)((float)MouseMap.Y * YFollowing * -1);
-
+    
     if (YTotal > Y_ANGLE_UPPPER_LIMIT)
     {
         //これ以上進まないようにする
@@ -988,8 +999,16 @@ void ProConDataModify(ProConData *pPad)
         YTotal = Y_ANGLE_LOWER_LIMIT;
         MouseMap.Y = 0;
     }
-
+    
     gyro.Y_Angle = YTotal;
+    //printf("Y raw=%d, mouse=%d\n", test.Y_Angle, gyro.Y_Angle);
+
+    if (ViewAngleReset)
+    {
+        gyro.Y_Angle *= -1;
+        YTotal = 0;
+        ViewAngleReset = 0;
+    }
 
     //上下
     gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
@@ -1054,6 +1073,8 @@ void* InputReportThread(void *p)
     int len;
     unsigned char buf[MAX_PACKET_LEN];
 
+    //ProConGyroData test;
+
     printf("InputReportThread start.\n");
 
     while (Processing)
@@ -1078,10 +1099,13 @@ void* InputReportThread(void *p)
             continue;
         }
 
-        if ((buf[0] == 0x30) && (GamePadMode == 0))
+        if (buf[0] == 0x30)
         {
-            ProConDataModify((ProConData *)buf);
-            BannerProt((ProConData *)buf);
+            if(GamePadMode == 0)
+            {
+                ProConDataModify((ProConData *)buf);
+                BannerProt((ProConData *)buf);
+            }
         }
 
         /*
@@ -1136,6 +1160,8 @@ int main(int argc, char *argv[])
     fGadget = -1;
     fKeyBord = -1;
     fBanner = -1;
+    YTotal = Y_ANGLE_DEFAULT;
+    YHold = 1; //視点フリー状態をデフォルトにする
 
     sprintf(ProconName, "/dev/%s", argv[1]);
     printf("ProCon=%s.\n", ProconName);
