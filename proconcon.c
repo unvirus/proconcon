@@ -5,7 +5,43 @@ GNU LESSER GENERAL PUBLIC LICENSE
 2022/08/28 unvirus
 
 how to build
-gcc proconcon.c -o proconcon.out -l pthread -lm  -O3 -Wall
+gcc proconcon.c -o proconcon.out -l pthread -lm  -O3 -Wall 
+ 
+Version history 
+ver.0.01 2022/07/27 First release 
+ver.0.02 2022/07/28 Y座標が変になるので、無理矢理調整 
+*/
+
+/*
+機能一覧 
+1キー　視点リセット、マウスの上下が変になったら2回ほど押す 
+2キー　写真キャプチャー 
+3キー　マイナスボタン 
+4キー　プラスボタン 
+9キー　手書きドット打ち、左上から開始 
+0キー　スティック補正のぐるぐる操作 
+WASDキー　スティックLに対応 
+Qキー　プレイ中の視点センタリング 
+Eキー　Aボタン、スーパージャンプ選択 
+Rキー　Xボタン、マップ 
+Fキー　ナイス 
+Vキー　カモン 
+SPACEキー　ジャンプ 
+ESCキー　ホーム 
+F5キー　X感度＋ 
+F6キー　X感度ー 
+F7キー　Y感度＋ 
+F8キー　Y感度ー 
+F9キー　Y追従値＋ 
+F10キー　Y追従値＝ 
+F11キー  コンバーターモード 
+F12キー　プロコンモード 
+マウス　ジャイロ視点 
+Rボタン　サブ 
+Lボタン　メイン 
+サイド1　イカ 
+サイド2　アサリ投げ 
+ホイール回転　スペシャル　　　
 */
 
 #include <stdio.h>
@@ -51,9 +87,10 @@ gcc proconcon.c -o proconcon.out -l pthread -lm  -O3 -Wall
 #define CENTER_RY_AXIS			(1920)
 
 #define MOUSE_READ_COUNTER		(3)		//指定した回数に達した場合マウス操作がされていない事を示す
-#define Y_ANGLE_UPPPER_LIMIT	(4000)	//Y上限
-#define Y_ANGLE_LOWER_LIMIT		(-2200)	//Y下限
-#define Y_ANGLE_DEFAULT         (0)  //Y角度、コントローラー平置き、0度
+#define Y_ANGLE_DEFAULT         (-640)  //Y角度、コントローラー平置き、0度
+#define Y_ANGLE_UPPPER_LIMIT	(3000 + Y_ANGLE_DEFAULT)	//Y上限
+#define Y_ANGLE_LOWER_LIMIT		(-1500 + Y_ANGLE_DEFAULT)	//Y下限
+
 
 #define SLOW_MOVEING 			(1600)	//イカダッシュでしぶきが出ない、上下左右、スティック入力値に連動
 #define SLOW_MOVEING_OTHER		(1100)	//イカダッシュでしぶきが出ない、斜め、スティック入力値に連動
@@ -165,7 +202,6 @@ int PadLoopCnt;
 int BannerX;
 int BannerOffs;
 int ProtDir;
-int ViewAngleReset;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -412,18 +448,6 @@ void* KeybordThread(void *p)
             KeyMap[event.code] = event.value;
 
             //設定処理
-            if (KeyMap[KEY_1])
-            {
-                if (YHold == 0)
-                {
-                    YHold = 1;
-                }
-                else
-                {
-                    YHold = 0;
-                }
-            }
-
             if (KeyMap[KEY_9])
             {
                 if (BannerOn)
@@ -780,16 +804,18 @@ void StickDrawCircle(ProConData *pPad)
     YValSet(pPad->R_Axis, Ry);
 }
 
+
 void ProConDataModify(ProConData *pPad)
 {
     ProConGyroData gyro;
     //ProConGyroData test;
 
     //key
-    if (YHold)
+    if (KeyMap[KEY_1])
     {
         //視点
         pPad->Y = 1;
+        YTotal = Y_ANGLE_DEFAULT;
     }
 
     if (KeyMap[KEY_2] == 1)
@@ -847,8 +873,7 @@ void ProConDataModify(ProConData *pPad)
 
     if (KeyMap[KEY_Q] == 1)
     {
-         pPad->Y = 1;
-         ViewAngleReset = 1;
+         YTotal = Y_ANGLE_DEFAULT;
     }
 
     //L Stick X
@@ -1003,13 +1028,6 @@ void ProConDataModify(ProConData *pPad)
     gyro.Y_Angle = YTotal;
     //printf("Y raw=%d, mouse=%d\n", test.Y_Angle, gyro.Y_Angle);
 
-    if (ViewAngleReset)
-    {
-        gyro.Y_Angle *= -1;
-        YTotal = 0;
-        ViewAngleReset = 0;
-    }
-
     //上下
     gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
     //左右
@@ -1161,7 +1179,6 @@ int main(int argc, char *argv[])
     fKeyBord = -1;
     fBanner = -1;
     YTotal = Y_ANGLE_DEFAULT;
-    YHold = 1; //視点フリー状態をデフォルトにする
 
     sprintf(ProconName, "/dev/%s", argv[1]);
     printf("ProCon=%s.\n", ProconName);
