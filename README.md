@@ -12,7 +12,7 @@ Nintendo SWITCH、スプラトゥーン3、プロコン
 マウス、キーボード、各機材の接続ケーブル  
   
 ラズベリーパイのUSB Gadgetを利用するため、電源をUSB-C以外から得る必要があります。  
-POE+HAT、POE対応LAN HUBで電源供給がよいでしょう。  
+POE+HATとPOE対応LAN HUBで電源供給がよいでしょう。  
   
 ## ラズベリーパイの準備
 USB gadgetが利用できるように設定する。  
