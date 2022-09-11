@@ -9,6 +9,7 @@ Version history
 ver.0.01 2022/08/27 First release 
 ver.0.02 2022/08/28 マウスズレ調整
 ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
+ver.0.04 2022/09/11 イカロールを出しやすくした 
 */
 
 #include <stdio.h>
@@ -34,7 +35,7 @@ ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 マウスの座標系とは異なるのでユーザー毎に調整が必要になる
 */
 #define X_SENSITIVITY           (20.0f)     //マウス操作、左右感度
-#define Y_SENSITIVITY           (22.0f)     //マウス操作、上下感度
+#define Y_SENSITIVITY           (23.0f)     //マウス操作、上下感度
 #define Y_FOLLOWING             (1.50f)     //マウス操作、上下追従補正
 
 //スティック入力値
@@ -43,9 +44,17 @@ ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 #define AXIS_HALF_INPUT_FACTOR  (0.833f)
 
 #define MOUSE_READ_COUNTER      (3)     //指定した回数に達した場合マウス操作がされていない事を示す
-#define Y_ANGLE_DEFAULT         (-640)  //Y角度、コントローラー平置き、0度
-#define Y_ANGLE_UPPPER_LIMIT    (3000 + Y_ANGLE_DEFAULT)    //Y上限
-#define Y_ANGLE_LOWER_LIMIT     (-1500 + Y_ANGLE_DEFAULT)   //Y下限
+#define Y_ANGLE_UPPPER_LIMIT    (3000)    //Y上限
+#define Y_ANGLE_LOWER_LIMIT     (-1500)   //Y下限
+
+/*
+キーボードの特性上、進行方向と逆方向に移行する場合、最速（15ms）で行わないと
+無入力期間が入りイカダッシュの停止と判定されイカロールが失敗する
+このため、方向入力を指定分だけ延長することで対処する
+値が4なら3*15msの延長となる
+値を大きくすれば、イカロールが出しやすくなるがイカダッシュの停止が遅れる
+*/
+#define DIR_FOLLOWING			(4)		//イカロールを行いやすくする
 
 #define MAX_NAME_LEN            (256)
 #define MAX_PACKET_LEN          (64)
@@ -92,7 +101,7 @@ typedef struct {
     short X_Accel;                //約16000から約-16000
     short Y_Accel;                //約16000から約-16000
     short Z_Accel;                //約16000から約-16000
-} ProConGyroData;
+} ProconGyroData;
 
 typedef struct {
     //0
@@ -164,6 +173,7 @@ int thInputReportCreated;
 int MouseReadCnt;
 int YTotal;
 int Slow;
+int HideToggle;
 int BannerOn;
 int BannerLen;
 int BannerLoopCnt;
@@ -185,6 +195,8 @@ pthread_t thInputReport;
 pthread_mutex_t MouseMtx;
 MouseData MouseMap;
 ProconData BannerPad;
+unsigned char DirPrev;
+unsigned char DirPrevCnt;
 unsigned char KeyMap[KEY_WIMAX];
 unsigned char BitmapData1[64 * 1024];
 unsigned char BitmapData2[64 * 1024];
@@ -415,6 +427,19 @@ void* KeybordThread(void *p)
             KeyMap[event.code] = event.value;
 
             //設定処理
+			if (KeyMap[KEY_8])
+            {
+                if (HideToggle)
+                {
+                    HideToggle = 0;
+                }
+                else
+                {
+                    HideToggle = 1;
+                }
+                printf("HideToggle=%d\n", HideToggle);
+            }
+
             if (KeyMap[KEY_9])
             {
                 if (BannerOn)
@@ -611,7 +636,7 @@ void* OutputReportThread(void *p)
         ret = write(fProcon, &buf, len);
         if (ret == -1)
         {
-            printf("ProCon OutputReport write error %d.\n", errno);
+            printf("Procon OutputReport write error %d.\n", errno);
             Processing = 0;
             continue;
         }
@@ -893,17 +918,71 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
     }
 }
 
+void GyroEmurate(ProconData *pPad)
+{
+	ProconGyroData gyro;
+
+	memset(&gyro, 0, sizeof(gyro));
+
+    //X角度、Z角度変化しない
+    gyro.Z_Angle = 4096;
+
+    //Y角度合算
+    YTotal += (int32_t)((float)MouseMap.Y * YFollowing * -1);
+
+    if (YTotal > Y_ANGLE_UPPPER_LIMIT)
+    {
+        //これ以上進まないようにする
+        YTotal = Y_ANGLE_UPPPER_LIMIT;
+        MouseMap.Y = 0;
+    }
+
+	if (YTotal < Y_ANGLE_LOWER_LIMIT)
+    {
+        //これ以上進まないようにする
+        YTotal = Y_ANGLE_LOWER_LIMIT;
+        MouseMap.Y = 0;
+    }
+
+    gyro.Y_Angle = YTotal;
+    //printf("YTotal=%d\n", YTotal);
+
+    //上下
+    gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
+
+
+	//左右
+	gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
+	//加速方向がマウスと逆なので逆転させる
+	gyro.Z_Accel *= -1;
+
+    //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
+    //コンバータでは同じデータを3つ格納する
+    memcpy(&pPad->GyroData[0], &gyro, sizeof(gyro));
+    memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
+    memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
+
+	MouseReadCnt++;
+    if (MouseReadCnt > MOUSE_READ_COUNTER)
+    {
+        //マウス操作無し、XYを0にする
+        //マウスは変化があった場合にデータが来る、よってXYに値が残っている
+        MouseMap.X = 0;
+        MouseMap.Y = 0;
+        MouseReadCnt = 0;
+    }
+}
+
 void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
-    ProConGyroData gyro;
 
     //key
     if (KeyMap[KEY_1])
     {
         //視点リセット
         pPad->Y = 1;
-        YTotal = Y_ANGLE_DEFAULT;
+        YTotal = 0;
     }
 
     if (KeyMap[KEY_2] == 1)
@@ -944,13 +1023,13 @@ void ProconInput(ProconData *pPad)
 
     if (KeyMap[KEY_F] == 1)
     {
-        //ナイス
+        //カモン
         pPad->Up = 1;
     }
 
-    if (KeyMap[KEY_V] == 1)
+    if (KeyMap[KEY_C] == 1)
     {
-        //カモン
+        //ナイス
         pPad->Down = 1;
     }
 
@@ -963,16 +1042,48 @@ void ProconInput(ProconData *pPad)
     if (KeyMap[KEY_Q] == 1)
     {
         //視点センターリング
-        YTotal = Y_ANGLE_DEFAULT;
+        YTotal = 0;
     }
+
+	if (KeyMap[KEY_KP8] == 1) 
+	{
+		pPad->Up = 1;
+	}
+
+	if (KeyMap[KEY_KP2] == 1)
+	{
+		pPad->Down = 1;
+	}
+
+	if (KeyMap[KEY_KP4] == 1) 
+	{
+		pPad->Left = 1;
+	}
+
+	if (KeyMap[KEY_KP6] == 1)
+	{
+		pPad->Right = 1;
+	}
 
     //左スティック
     dir = KeyMap[KEY_W] << 3;
     dir |= KeyMap[KEY_D] << 2;
     dir |= KeyMap[KEY_S] << 1;
     dir |= KeyMap[KEY_A];
-    StickInput(pPad->L_Axis, dir);
 
+	if ((dir == 0) && (DirPrevCnt <= DIR_FOLLOWING))
+	{
+		DirPrevCnt ++;
+		StickInput(pPad->L_Axis, DirPrev);
+	}
+	else
+	{
+		StickInput(pPad->L_Axis, dir);
+		DirPrev = dir;
+		DirPrevCnt = 0;
+	}
+
+    //右スティック
     dir = KeyMap[KEY_UP] << 3;
     dir |= KeyMap[KEY_RIGHT] << 2;
     dir |= KeyMap[KEY_DOWN] << 1;
@@ -986,54 +1097,8 @@ void ProconInput(ProconData *pPad)
     }
 
     //mouse
-    pthread_mutex_lock(&MouseMtx);
-    memset(&gyro, 0, sizeof(gyro));
-
-    //X角度、Z角度変化しない
-    gyro.Z_Angle = 4096;
-
-    //Y角度合算
-    YTotal += (int32_t)((float)MouseMap.Y * YFollowing * -1);
-
-    if (YTotal > Y_ANGLE_UPPPER_LIMIT)
-    {
-        //これ以上進まないようにする
-        YTotal = Y_ANGLE_UPPPER_LIMIT;
-        MouseMap.Y = 0;
-    }
-
-    if (YTotal < Y_ANGLE_LOWER_LIMIT)
-    {
-        //これ以上進まないようにする
-        YTotal = Y_ANGLE_LOWER_LIMIT;
-        MouseMap.Y = 0;
-    }
-
-    gyro.Y_Angle = YTotal;
-    //printf("Y raw=%d, mouse=%d\n", test.Y_Angle, gyro.Y_Angle);
-
-    //上下
-    gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
-    //左右
-    gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
-    //加速方向がマウスと逆なので逆転させる
-    gyro.Z_Accel *= -1;
-
-    //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
-    //コンバータでは同じデータを3つ格納する
-    memcpy(&pPad->GyroData[0], &gyro, sizeof(gyro));
-    memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
-    memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
-
-    MouseReadCnt++;
-    if (MouseReadCnt > MOUSE_READ_COUNTER)
-    {
-        //マウス操作無し、XYを0にする
-        //マウスは変化があった場合にデータが来る、よってXYに値が残っている
-        MouseMap.X = 0;
-        MouseMap.Y = 0;
-        MouseReadCnt = 0;
-    }
+	GyroEmurate(pPad);
+    
 
     if (MouseMap.R)
     {
@@ -1047,12 +1112,24 @@ void ProconInput(ProconData *pPad)
         pPad->ZR = 1;
     }
 
-    if (MouseMap.Side)
+    if (HideToggle)
     {
-        //イカ
         pPad->ZL = 1;
     }
 
+    if (MouseMap.Side)
+    {
+        //イカ
+        if (HideToggle == 0)
+        {
+            pPad->ZL = 1;
+        }
+        else
+        {
+            pPad->ZL = 0;
+        }
+    }
+    
     if (MouseMap.Extra)
     {
         //アサリ
@@ -1065,6 +1142,12 @@ void ProconInput(ProconData *pPad)
         pPad->StickR = 1;
         MouseMap.Wheel = 0;
     }
+
+	if (MouseMap.Middle)
+	{
+		//スペシャル
+		pPad->StickR = 1;
+	}
 
     pthread_mutex_unlock(&MouseMtx);
 }
@@ -1247,8 +1330,8 @@ int main(int argc, char *argv[])
     /*
     初期値
     マウス操作は画面に対して、横がX、縦がYとする
-    ProConのジャイロとは座標軸が異なるので注意すること
-    ProConの座標は平置きして上から見たときに
+    Proconのジャイロとは座標軸が異なるので注意すること
+    Proconの座標は平置きして上から見たときに
     https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/imu_sensor_notes.md
     のLeft Jyo-Con図と合わせてある
     */
@@ -1261,7 +1344,7 @@ int main(int argc, char *argv[])
     fProcon = -1;
     fGadget = -1;
     fBanner = -1;
-    YTotal = Y_ANGLE_DEFAULT;
+    YTotal = 0;
     GoStraight = AXIS_MAX_INPUT;
     GoStraightHalf = (int)((float)GoStraight * AXIS_HALF_INPUT_FACTOR);
     GoDiagonally = (int)(0.7071f * (float)AXIS_MAX_INPUT); //0.7071 is cos 45
@@ -1413,7 +1496,7 @@ EXIT:
 
     pthread_mutex_destroy(&MouseMtx);
 
-    printf("ProCon Converter exit.\n");
+    printf("Procon Converter exit.\n");
     return 0;
 }
 
