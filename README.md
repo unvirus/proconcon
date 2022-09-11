@@ -27,9 +27,17 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 ラズベリーパイにProcon、Keybord、Mouseを接続する。  
 ラズベリーパイをUSBケーブルでNintendo SWITCHに接続する。  
   
+![IMG_E1374](https://user-images.githubusercontent.com/83897755/189526222-d5b93a43-8da5-405b-a07e-c4226972e039.JPG)
+  
 ## 起動方法
 sudo ./load_procon.sh  
 sudo ./proconcon.out  
+
+## センターリング  
+試合が始まった時、1キーを1秒ほど間隔を開けて2回押してください。  
+この操作で、マウスのセンターリングが行われます。  
+試合中のセンターリングはQキーで行えます。  
+もし、マウスの動きがゲームに正しく反映されない場合は再度センターリングを行ってください。  
 
 ## 参考文献
 https://www.mzyy94.com/blog/2020/03/20/nintendo-switch-pro-controller-usb-gadget/  
