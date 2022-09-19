@@ -10,6 +10,7 @@ ver.0.01 2022/08/27 First release
 ver.0.02 2022/08/28 マウスズレ調整
 ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 ver.0.04 2022/09/11 イカロールを出しやすくした 
+ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加
 */
 
 #include <stdio.h>
@@ -165,25 +166,20 @@ int fProcon;
 int fGadget;
 int fKeyboard;
 int fMouse;
-int fBanner;
 int thKeyboardCreated;
 int thMouseCreated;
 int thOutputReportCreated;
 int thInputReportCreated;
+int thBannerCreated;
 int MouseReadCnt;
 int YTotal;
 int Slow;
-int HideToggle;
-int BannerOn;
-int BannerLen;
-int BannerLoopCnt;
-int BannerX;
-int BannerOffs;
-int BannerProtDir;
+int IkaToggle;
 int GoStraight;
 int GoStraightHalf;
 int GoDiagonally;
 int GoDiagonallyHalf;
+int RappidFire;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -194,7 +190,6 @@ pthread_t thOutputReport;
 pthread_t thInputReport;
 pthread_mutex_t MouseMtx;
 MouseData MouseMap;
-ProconData BannerPad;
 unsigned char DirPrev;
 unsigned char DirPrevCnt;
 unsigned char KeyMap[KEY_WIMAX];
@@ -258,136 +253,38 @@ short ToShort(unsigned char *pBuf)
     return ret;
 }
 
-int BannerTemplateOpen(void)
+unsigned short XValGet(unsigned char *pBuf)
 {
-    int ret;
-    int top;
-    int len;
-    int i;
-    int j;
-    int src_offs;
-    int dst_offs;
-    unsigned char bmHeader[BITMAP_HEADER_LEN];
+    unsigned short ret;
 
-    if (fBanner != -1)
-    {
-        close(fBanner);
-        fBanner = -1;
-    }
+    ret = ((short)pBuf[1] & 0x0F) << 8;
+    ret |= (short)pBuf[0];
 
-    fBanner = open(BANNER_NAME, O_RDONLY);
-    if (fBanner == -1)
-    {
-        printf("fBanner open error %d.\n", errno);
-        return 0;
-    }
+    return ret;
+}
 
-    ret = read(fBanner, bmHeader, sizeof(bmHeader));
-    if (ret != sizeof(bmHeader))
-    {
-        printf("fBanner read error.\n");
-        goto ERROR_EXIT;
-    }
+unsigned short YValGet(unsigned char *pBuf)
+{
+    unsigned short ret;
 
-    //BMヘッダ確認
-    if (bmHeader[0] != 'B')
-    {
-        printf("Not bitmap file.\n");
-        goto ERROR_EXIT;
-    }
+    ret = (short)pBuf[1] >> 4;
+    ret |= (short)pBuf[2] << 4;
 
-    if (bmHeader[1] != 'M')
-    {
-        printf("Not bitmap file.\n");
-        goto ERROR_EXIT;
-    }
+    return ret;
+}
 
-    //データ開始位置
-    top = ToInt(&bmHeader[10]);
-    printf("data top=%d.\n", top);
+void XValSet(unsigned char *pBuf, unsigned short X)
+{
+    pBuf[0] = (unsigned char)(X & 0x00FF);
+    pBuf[1] &= 0xF0;
+    pBuf[1] |= (unsigned char)((X >> 8) & 0x000F);
+}
 
-    ret = ToInt(&bmHeader[18]);
-    if (ret != BANNER_WHDTH)
-    {
-        printf("illigal bmp width=%d.\n", ret);
-        goto ERROR_EXIT;
-    }
-
-    ret = ToInt(&bmHeader[22]);
-    if (ret != BANNER_HEIGHT)
-    {
-        printf("illigal bmp height=%d.\n", ret);
-        goto ERROR_EXIT;
-    }
-
-    //8Bitカラー
-    ret = (int)ToShort(&bmHeader[28]);
-    if (ret != 8)
-    {
-        printf("illigal bmp color=%d.\n", ret);
-        goto ERROR_EXIT;
-    }
-
-    //ファイルオフセットを進める
-    len = top - BITMAP_HEADER_LEN;
-    ret = read(fBanner, BitmapData1, len);
-    if (ret != len)
-    {
-        printf("fBanner read error.\n");
-        goto ERROR_EXIT;
-    }
-
-    /*
-    カラーパレット分読み飛ばし
-    Windows標準インデックスカラービットマップ(256色）は     
-    パレット0が黒、パレット255が白なのでパレットは見ない
-    */
-    BannerLen = BANNER_WHDTH * BANNER_HEIGHT;
-    ret = read(fBanner, BitmapData1, BannerLen);
-    if (ret != BannerLen)
-    {
-        printf("fBanner read error.\n");
-        goto ERROR_EXIT;
-    }
-
-    close(fBanner);
-
-    //BMPは左下から開始なので逆にする
-    src_offs = 0;
-    dst_offs = BANNER_WHDTH * (BANNER_HEIGHT - 1);
-    for (i = 0; i < BANNER_HEIGHT; i++)
-    {
-        memcpy(&BitmapData2[dst_offs], &BitmapData1[src_offs], BANNER_WHDTH);
-        src_offs += BANNER_WHDTH;
-        dst_offs -= BANNER_WHDTH;
-    }
-
-    //ドット打ち順に並べ替える
-    for (i = 0; i < BANNER_HEIGHT; i++)
-    {
-        if (i & 1)
-        {
-            //奇数ラインの時はラインを逆転する
-            //一時退避
-            src_offs = BANNER_WHDTH * i;
-            memcpy(&BitmapData1[0], &BitmapData2[src_offs], BANNER_WHDTH);
-
-            dst_offs = src_offs + BANNER_WHDTH - 1;
-            for (j = 0; j < BANNER_WHDTH; j++)
-            {
-                BitmapData2[dst_offs] = BitmapData1[j];
-                dst_offs--;
-            }
-        }
-    }
-
-    return 1;
-
-ERROR_EXIT:
-    close(fBanner);
-    fBanner = -1;
-
-    return 0;
+void YValSet(unsigned char *pBuf, unsigned short Y)
+{
+    pBuf[1] &= 0x0F;
+    pBuf[1] |= (unsigned char)((Y << 4) & 0x00F0);
+    pBuf[2] = (unsigned char)((Y >> 4) & 0x00FF);
 }
 
 void* KeybordThread(void *p)
@@ -429,34 +326,17 @@ void* KeybordThread(void *p)
             //設定処理
 			if (KeyMap[KEY_8])
             {
-                if (HideToggle)
+                if (IkaToggle)
                 {
-                    HideToggle = 0;
+                    IkaToggle = 0;
                 }
                 else
                 {
-                    HideToggle = 1;
+                    IkaToggle = 1;
                 }
-                printf("HideToggle=%d\n", HideToggle);
+                printf("IkaToggle=%d\n", IkaToggle);
             }
-
-            if (KeyMap[KEY_9])
-            {
-                if (BannerOn)
-                {
-                    BannerOn = 0;
-                }
-                else
-                {
-                    ret = BannerTemplateOpen();
-                    if (ret == 1)
-                    {
-                        BannerOn = 1;
-                    }
-                }
-                printf("BannerOn=%d\n", BannerOn);
-            }
-
+            
             Slow = KeyMap[KEY_LEFTSHIFT];
 
             if (KeyMap[KEY_F5])
@@ -644,130 +524,6 @@ void* OutputReportThread(void *p)
 
     printf("OutputReportThread exit.\n");
     return NULL;
-}
-
-void BannerProt(ProconData *pPad)
-{
-    if (BannerOn == 0)
-    {
-        BannerProtDir = 0;
-        BannerX = 0;
-        BannerOffs = 0;
-        return;
-    }
-
-    if (BannerOffs >= BannerLen)
-    {
-        //最後までドット打ちした
-        BannerOn = 0;
-        BannerProtDir = 0;
-        BannerX = 0;
-        BannerOffs = 0;
-        return;
-    }
-
-    BannerLoopCnt++;
-
-    if (BannerLoopCnt == 1)
-    {
-        memset(&BannerPad, 0, sizeof(BannerPad));
-    }
-
-    if (BannerLoopCnt == 3)
-    {
-        if (BitmapData2[BannerOffs] == 0xFF)
-        {
-            BannerPad.B = 1;
-        }
-        else
-        {
-            BannerPad.A = 1;
-        }
-
-        BannerOffs++;
-    }
-
-    if (BannerLoopCnt == 5)
-    {
-        memset(&BannerPad, 0, sizeof(BannerPad));
-    }
-
-    if (BannerLoopCnt == 7)
-    {
-        BannerX++;
-
-        if (BannerX < BANNER_WHDTH)
-        {
-            if (BannerProtDir)
-            {
-                BannerPad.A = 0;
-                BannerPad.B = 0;
-                BannerPad.Left = 1;
-            }
-            else
-            {
-                BannerPad.A = 0;
-                BannerPad.B = 0;
-                BannerPad.Right = 1;
-            }
-        }
-        else
-        {
-            BannerPad.Down = 1;
-            BannerPad.Left = 0;
-            BannerPad.Right = 0;
-
-            BannerProtDir++;
-            BannerProtDir &= 1;
-
-            BannerX = 0;
-        }
-    }
-
-    if (BannerLoopCnt == 8)
-    {
-        BannerLoopCnt = 0;
-    }
-
-    pPad->A = BannerPad.A;
-    pPad->B = BannerPad.B;
-    pPad->Down = BannerPad.Down;
-    pPad->Left = BannerPad.Left;
-    pPad->Right = BannerPad.Right;
-}
-
-unsigned short XValGet(unsigned char *pBuf)
-{
-    unsigned short ret;
-
-    ret = ((short)pBuf[1] & 0x0F) << 8;
-    ret |= (short)pBuf[0];
-
-    return ret;
-}
-
-unsigned short YValGet(unsigned char *pBuf)
-{
-    unsigned short ret;
-
-    ret = (short)pBuf[1] >> 4;
-    ret |= (short)pBuf[2] << 4;
-
-    return ret;
-}
-
-void XValSet(unsigned char *pBuf, unsigned short X)
-{
-    pBuf[0] = (unsigned char)(X & 0x00FF);
-    pBuf[1] &= 0xF0;
-    pBuf[1] |= (unsigned char)((X >> 8) & 0x000F);
-}
-
-void YValSet(unsigned char *pBuf, unsigned short Y)
-{
-    pBuf[1] &= 0x0F;
-    pBuf[1] |= (unsigned char)((Y << 4) & 0x00F0);
-    pBuf[2] = (unsigned char)((Y >> 4) & 0x00FF);
 }
 
 void StickDrawCircle(ProconData *pPad)
@@ -973,6 +729,8 @@ void GyroEmurate(ProconData *pPad)
     }
 }
 
+unsigned int Tc;
+
 void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
@@ -1011,7 +769,8 @@ void ProconInput(ProconData *pPad)
 
     if (KeyMap[KEY_E] == 1)
     {
-        //スーパージャンプ
+        //スーパージャンプ決定
+        //アサリ
         pPad->A = 1;
     }
 
@@ -1045,6 +804,24 @@ void ProconInput(ProconData *pPad)
         YTotal = 0;
     }
 
+    if (KeyMap[KEY_T] == 1)
+    {
+        //L
+        pPad->L = 1;
+    }
+
+    if (KeyMap[KEY_Y] == 1)
+    {
+        //R
+        pPad->R = 1;
+    }
+
+    if (KeyMap[KEY_U] == 1)
+    {
+        //L Stick
+        pPad->StickL = 1;
+    }
+
 	if (KeyMap[KEY_KP8] == 1) 
 	{
 		pPad->Up = 1;
@@ -1071,7 +848,7 @@ void ProconInput(ProconData *pPad)
     dir |= KeyMap[KEY_S] << 1;
     dir |= KeyMap[KEY_A];
 
-	if ((dir == 0) && (DirPrevCnt <= DIR_FOLLOWING))
+    if ((dir == 0) && (DirPrevCnt <= DIR_FOLLOWING))
 	{
 		DirPrevCnt ++;
 		StickInput(pPad->L_Axis, DirPrev);
@@ -1112,7 +889,7 @@ void ProconInput(ProconData *pPad)
         pPad->ZR = 1;
     }
 
-    if (HideToggle)
+    if (IkaToggle)
     {
         pPad->ZL = 1;
     }
@@ -1120,7 +897,7 @@ void ProconInput(ProconData *pPad)
     if (MouseMap.Side)
     {
         //イカ
-        if (HideToggle == 0)
+        if (IkaToggle == 0)
         {
             pPad->ZL = 1;
         }
@@ -1132,8 +909,16 @@ void ProconInput(ProconData *pPad)
     
     if (MouseMap.Extra)
     {
-        //アサリ
-        pPad->L = 1;
+        //メイン連射
+        if (RappidFire != 0)
+        {
+            pPad->ZR = 1;
+            RappidFire = 0;
+        }
+        else
+        {
+            RappidFire = 1;
+        }
     }
 
     if (MouseMap.Wheel)
@@ -1186,8 +971,7 @@ void* InputReportThread(void *p)
         {
             if (GamePadMode == 0)
             {
-                ProconInput((ProconData *)buf);
-                BannerProt((ProconData *)buf);
+                ProconInput((ProconData*)buf);
             }
         }
 
@@ -1343,7 +1127,6 @@ int main(int argc, char *argv[])
     fMouse = -1;
     fProcon = -1;
     fGadget = -1;
-    fBanner = -1;
     YTotal = 0;
     GoStraight = AXIS_MAX_INPUT;
     GoStraightHalf = (int)((float)GoStraight * AXIS_HALF_INPUT_FACTOR);
