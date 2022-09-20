@@ -90,7 +90,7 @@ usb-SIGMACHIP_USB_Keyboard-event-if01
 usb-SIGMACHIP_USB_Keyboard-event-kbd
 usb-Topre_Corporation_Realforce_108-event-kbd 
 */
-#define KEYBORD_NAME        "Topre_Corporation_Realforce_108"
+#define KEYBOARD_NAME       "Topre_Corporation_Realforce_108"
 #define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
 
 #define PROCON_NAME         "Nintendo Co., Ltd. Pro Controller"     //Procon名は固定
@@ -180,6 +180,7 @@ int GoStraightHalf;
 int GoDiagonally;
 int GoDiagonallyHalf;
 int RappidFire;
+int MWButtonToggle;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -336,7 +337,21 @@ void* KeybordThread(void *p)
                 }
                 printf("IkaToggle=%d\n", IkaToggle);
             }
-            
+
+            if (KeyMap[KEY_9])
+            {
+                //メイン単発、連射ボタンを入れ替える
+                if (MWButtonToggle)
+                {
+                    MWButtonToggle = 0;
+                }
+                else
+                {
+                    MWButtonToggle = 1;
+                }
+                printf("MWButtonToggle=%d\n", MWButtonToggle);
+            }
+
             Slow = KeyMap[KEY_LEFTSHIFT];
 
             if (KeyMap[KEY_F5])
@@ -885,8 +900,25 @@ void ProconInput(ProconData *pPad)
 
     if (MouseMap.L)
     {
-        //メイン
-        pPad->ZR = 1;
+        
+        if (MWButtonToggle == 0)
+        {
+            //メイン単発
+            pPad->ZR = 1;
+        }
+        else
+        {
+            //メイン連射
+            if (RappidFire != 0)
+            {
+                pPad->ZR = 1;
+                RappidFire = 0;
+            }
+            else
+            {
+                RappidFire = 1;
+            }
+        }
     }
 
     if (IkaToggle)
@@ -909,15 +941,23 @@ void ProconInput(ProconData *pPad)
     
     if (MouseMap.Extra)
     {
-        //メイン連射
-        if (RappidFire != 0)
+        if (MWButtonToggle == 0)
         {
-            pPad->ZR = 1;
-            RappidFire = 0;
+            //メイン連射
+            if (RappidFire != 0)
+            {
+                pPad->ZR = 1;
+                RappidFire = 0;
+            }
+            else
+            {
+                RappidFire = 1;
+            }
         }
         else
-        {
-            RappidFire = 1;
+        {   
+            //メイン単発
+            pPad->ZR = 1;
         }
     }
 
@@ -1135,7 +1175,7 @@ int main(int argc, char *argv[])
 
     pthread_mutex_init(&MouseMtx, NULL);
 
-    ret = InputDevNameGet(DEV_KEYBOARD, KEYBORD_NAME, devName);
+    ret = InputDevNameGet(DEV_KEYBOARD, KEYBOARD_NAME, devName);
     if (ret == -1)
     {
         printf("Keybord is not found.\n");
