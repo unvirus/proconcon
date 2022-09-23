@@ -80,7 +80,7 @@ sudo ./proconcon.out
 | Mouse R       | R             |                                                   | 
 | Mouse L       | ZR            |                                                   | 
 | Mouse Side    | ZL            |                                                   | 
-| Mouse Extra   | ZL            | Rappid Fire                                       | 
+| Mouse Extra   | ZR            | Rappid Fire                                       | 
 | Mouse Wheel   | Stick R Push  |                                                   | 
 | Mouse Middle  | Stick R Push  |                                                   | 
 | Mouse move    | Gyro          |                                                   | 
