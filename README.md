@@ -40,6 +40,52 @@ sudo ./proconcon.out
 試合中のセンターリングはQキーで行えます。  
 もし、マウスの動きがゲームに正しく反映されない場合は再度センターリングを行ってください。  
 
+## ボタン配置
+デフォルト状態では下記のキー配置になっています。  
+
+| Key           | ProCon        | Comment                                           |  
+| ------------- | ------------- | ------------------------------------------------- |  
+| ESC           | Home          |                                                   |
+| 1             | Y             | Centering                                         |  
+| 2             | Capture       |                                                   |  
+| 3             | -             |                                                   |  
+| 4             | +             |                                                   | 
+| 8             |               | Mouse Sideの人、イカ逆転                           | 
+| 9             |               | Mouse Lの単射、連射入れ替え                        | 
+| WASD          | Stick L       |                                                   | 
+| SHIFT L       |               | SHIFT L＋WASDで遅い動き                            | 
+| SPACE         | B             |                                                   |
+| Q             |               | Centering                                         | 
+| E             | A             |                                                   | 
+| R             | X             |                                                   | 
+| F             | Hat Up        |                                                   | 
+| C             | Hat Down      |                                                   | 
+| T             | L             |                                                   | 
+| Y             | R             |                                                   | 
+| U             | Stick L Push  |                                                   | 
+| O             |               | Stickで円を描く、補正用                            | 
+| Num2          | Hat Down      |                                                   | 
+| Num4          | Hat Left      |                                                   | 
+| Num6          | Hat Right     |                                                   | 
+| Num8          | Hat Up        |                                                   | 
+| Arrow Key     | Stick R       |                                                   | 
+| F5            |               | X感度+0.1、デバッグ用                              | 
+| F6            |               | X感度-0.1、デバッグ用                              | 
+| F7            |               | Y感度+0.1、デバッグ用                              | 
+| F8            |               | Y感度-0.1、デバッグ用                              | 
+| F9            |               | Y追従+0.1、デバッグ用                              | 
+| F10           |               | Y追従-0.1、デバッグ用                              | 
+| F11           |               | Keyboardモード                                     | 
+| F12           |               | GamePadモード                                      | 
+| Mouse R       | R             |                                                   | 
+| Mouse L       | ZR            |                                                   | 
+| Mouse Side    | ZL            |                                                   | 
+| Mouse Extra   | ZL            | Rappid Fire                                       | 
+| Mouse Wheel   | Stick R Push  |                                                   | 
+| Mouse Middle  | Stick R Push  |                                                   | 
+| Mouse move    | Gyro          |                                                   | 
+
+  
 ## 参考文献
 https://www.mzyy94.com/blog/2020/03/20/nintendo-switch-pro-controller-usb-gadget/  
 https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering  
