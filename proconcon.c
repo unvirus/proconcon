@@ -10,7 +10,8 @@ ver.0.01 2022/08/27 First release
 ver.0.02 2022/08/28 マウスズレ調整
 ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 ver.0.04 2022/09/11 イカロールを出しやすくした 
-ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加
+ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加 
+ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプを追加 
 */
 
 #include <stdio.h>
@@ -44,29 +45,24 @@ ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除
 #define AXIS_MAX_INPUT          (1920)
 #define AXIS_HALF_INPUT_FACTOR  (0.833f)
 
-#define MOUSE_READ_COUNTER      (3)     //指定した回数に達した場合マウス操作がされていない事を示す
-#define Y_ANGLE_UPPPER_LIMIT    (3000)    //Y上限
-#define Y_ANGLE_LOWER_LIMIT     (-1500)   //Y下限
+#define MOUSE_READ_COUNTER      (3)         //指定した回数に達した場合マウス操作がされていない事を示す
+#define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y上限
+#define Y_ANGLE_LOWER_LIMIT     (-1500)     //Y下限
 
 /*
 キーボードの特性上、進行方向と逆方向に移行する場合、最速（15ms）で行わないと
 無入力期間が入りイカダッシュの停止と判定されイカロールが失敗する
 このため、方向入力を指定分だけ延長することで対処する
-値が4なら3*15msの延長となる
+値が3なら3*15msの延長となる
 値を大きくすれば、イカロールが出しやすくなるがイカダッシュの停止が遅れる
 */
-#define DIR_FOLLOWING			(4)		//イカロールを行いやすくする
+#define DIR_FOLLOWING			(3)		//イカロールを行いやすくする
 
 #define MAX_NAME_LEN            (256)
 #define MAX_PACKET_LEN          (64)
 #define MAX_BUFFER_LEN          (512)
-#define BITMAP_HEADER_LEN       (54)
-
-#define BANNER_WHDTH            (320)
-#define BANNER_HEIGHT           (120)
 
 #define GADGET_NAME             "/dev/hidg0"
-#define BANNER_NAME             "./banner.bmp"  //320＊120の256色ビットマップ画像を指定可能、白黒のみ使うこと
 
 #define GADGET_DETACH           "echo "" > /sys/kernel/config/usb_gadget/procon/UDC"
 #define GADGET_ATTACH           "ls /sys/class/udc > /sys/kernel/config/usb_gadget/procon/UDC"
@@ -175,12 +171,14 @@ int MouseReadCnt;
 int YTotal;
 int Slow;
 int IkaToggle;
-int GoStraight;
-int GoStraightHalf;
-int GoDiagonally;
-int GoDiagonallyHalf;
+int Straight;
+int StraightHalf;
+int Diagonal;
+int DiagonalHalf;
 int RappidFire;
 int MWButtonToggle;
+int ReturnToBase;
+int ReturnToBaseCnt;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -194,8 +192,6 @@ MouseData MouseMap;
 unsigned char DirPrev;
 unsigned char DirPrevCnt;
 unsigned char KeyMap[KEY_WIMAX];
-unsigned char BitmapData1[64 * 1024];
-unsigned char BitmapData2[64 * 1024];
 
 int ReadCheck(int Fd)
 {
@@ -325,6 +321,13 @@ void* KeybordThread(void *p)
             KeyMap[event.code] = event.value;
 
             //設定処理
+            if (KeyMap[KEY_Z])
+            {
+                //復活地点へスーパージャンプ
+                ReturnToBase = 1;
+                ReturnToBaseCnt = 0;
+            }
+
 			if (KeyMap[KEY_8])
             {
                 if (IkaToggle)
@@ -574,12 +577,12 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER + GoStraightHalf);
+            YValSet(pAxis, AXIS_CENTER + StraightHalf);
         }
         else
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER + GoStraight);
+            YValSet(pAxis, AXIS_CENTER + Straight);
         }
     }
     else if (Dir == 0x0c)
@@ -587,13 +590,13 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //右上
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER + GoDiagonallyHalf);
-            YValSet(pAxis, AXIS_CENTER + GoDiagonallyHalf);
+            XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
+            YValSet(pAxis, AXIS_CENTER + DiagonalHalf);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER + GoDiagonally);
-            YValSet(pAxis, AXIS_CENTER + GoDiagonally);
+            XValSet(pAxis, AXIS_CENTER + Diagonal);
+            YValSet(pAxis, AXIS_CENTER + Diagonal);
         }
     }
     else if (Dir == 0x04)
@@ -601,12 +604,12 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //右
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER + GoStraightHalf);
+            XValSet(pAxis, AXIS_CENTER + StraightHalf);
             YValSet(pAxis, AXIS_CENTER);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER + GoStraight);
+            XValSet(pAxis, AXIS_CENTER + Straight);
             YValSet(pAxis, AXIS_CENTER);
         }
 
@@ -616,13 +619,13 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //右下
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER + GoDiagonallyHalf);
-            YValSet(pAxis, AXIS_CENTER - GoDiagonallyHalf);
+            XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
+            YValSet(pAxis, AXIS_CENTER - DiagonalHalf);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER + GoDiagonally);
-            YValSet(pAxis, AXIS_CENTER - GoDiagonally);
+            XValSet(pAxis, AXIS_CENTER + Diagonal);
+            YValSet(pAxis, AXIS_CENTER - Diagonal);
         }
     }
     else if (Dir == 0x02)
@@ -631,12 +634,12 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER - GoStraightHalf);
+            YValSet(pAxis, AXIS_CENTER - StraightHalf);
         }
         else
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER - GoStraight);
+            YValSet(pAxis, AXIS_CENTER - Straight);
         }
     }
     else if (Dir == 0x03)
@@ -644,13 +647,13 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //左下
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER - GoDiagonallyHalf);
-            YValSet(pAxis, AXIS_CENTER - GoDiagonallyHalf);
+            XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
+            YValSet(pAxis, AXIS_CENTER - DiagonalHalf);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER - GoDiagonally);
-            YValSet(pAxis, AXIS_CENTER - GoDiagonally);
+            XValSet(pAxis, AXIS_CENTER - Diagonal);
+            YValSet(pAxis, AXIS_CENTER - Diagonal);
         }
     }
     else if (Dir == 0x01)
@@ -658,12 +661,12 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //左
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER - GoStraightHalf);
+            XValSet(pAxis, AXIS_CENTER - StraightHalf);
             YValSet(pAxis, AXIS_CENTER);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER - GoStraight);
+            XValSet(pAxis, AXIS_CENTER - Straight);
             YValSet(pAxis, AXIS_CENTER);
         }
     }
@@ -672,13 +675,13 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         //左上
         if (Slow)
         {
-            XValSet(pAxis, AXIS_CENTER - GoDiagonallyHalf);
-            YValSet(pAxis, AXIS_CENTER + GoDiagonallyHalf);
+            XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
+            YValSet(pAxis, AXIS_CENTER + DiagonalHalf);
         }
         else
         {
-            XValSet(pAxis, AXIS_CENTER - GoDiagonally);
-            YValSet(pAxis, AXIS_CENTER + GoDiagonally);
+            XValSet(pAxis, AXIS_CENTER - Diagonal);
+            YValSet(pAxis, AXIS_CENTER + Diagonal);
         }
     }
     else
@@ -744,7 +747,60 @@ void GyroEmurate(ProconData *pPad)
     }
 }
 
-unsigned int Tc;
+/*
+マクロサンプル
+スタート地点へスーパージャンプする
+ProconInputの呼び出し間隔は15msなのでProconInput内で呼ぶReturnToBaseMacroも 
+15ms間隔で呼ばれることになる 
+*/ 
+void ReturnToBaseMacro(ProconData *pPad)
+{
+    if (ReturnToBase)
+    {
+        switch (ReturnToBaseCnt)
+        {
+        case 0:
+        case 1:
+            //マクロ開始から0ms-30msはイカ、マップ開いたことにする
+            pPad->ZL = 1;
+            pPad->ZR = 0;
+
+            pPad->A = 0;
+            pPad->B = 0;
+            pPad->X = 1;
+            pPad->Y = 0;
+
+            pPad->Up = 0;
+            pPad->Down = 0;
+            pPad->Left = 0;
+            pPad->Right = 0;
+
+            ReturnToBaseCnt ++;
+            break;
+        case 2:
+        case 3:
+            //マクロ開始から30ms-60msはイカ、マップ、下、Aでスーパージャンプを実施
+            pPad->ZL = 1;
+            pPad->ZR = 0;
+
+            pPad->A = 1;
+            pPad->B = 0;
+            pPad->X = 1;
+            pPad->Y = 0;
+
+            pPad->Up = 0;
+            pPad->Down = 1;
+            pPad->Left = 0;
+            pPad->Right = 0;
+
+            ReturnToBaseCnt ++;
+            break;
+        default:
+            ReturnToBase = 0;
+            break;
+        }
+    }
+}
 
 void ProconInput(ProconData *pPad)
 {
@@ -888,10 +944,13 @@ void ProconInput(ProconData *pPad)
         StickDrawCircle(pPad);
     }
 
+    ReturnToBaseMacro(pPad);
+
+    pthread_mutex_lock(&MouseMtx);
+
     //mouse
 	GyroEmurate(pPad);
     
-
     if (MouseMap.R)
     {
         //サブ
@@ -1168,10 +1227,10 @@ int main(int argc, char *argv[])
     fProcon = -1;
     fGadget = -1;
     YTotal = 0;
-    GoStraight = AXIS_MAX_INPUT;
-    GoStraightHalf = (int)((float)GoStraight * AXIS_HALF_INPUT_FACTOR);
-    GoDiagonally = (int)(0.7071f * (float)AXIS_MAX_INPUT); //0.7071 is cos 45
-    GoDiagonallyHalf = (int)((float)GoDiagonally * AXIS_HALF_INPUT_FACTOR);
+    Straight = AXIS_MAX_INPUT;
+    StraightHalf = (int)((float)Straight * AXIS_HALF_INPUT_FACTOR);
+    Diagonal = (int)(0.7071f * (float)AXIS_MAX_INPUT); //0.7071 is cos 45
+    DiagonalHalf = (int)((float)Diagonal * AXIS_HALF_INPUT_FACTOR);
 
     pthread_mutex_init(&MouseMtx, NULL);
 
