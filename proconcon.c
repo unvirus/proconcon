@@ -12,6 +12,7 @@ ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 ver.0.04 2022/09/11 イカロールを出しやすくした 
 ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加 
 ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプを追加 
+ver 0.07 2022/10/29 スティック補正を不要にした  
 */
 
 #include <stdio.h>
@@ -43,9 +44,14 @@ ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプ
 //スティック入力値
 #define AXIS_CENTER             (1920)
 #define AXIS_MAX_INPUT          (1920)
-#define AXIS_HALF_INPUT_FACTOR  (0.833f)
 
-#define MOUSE_READ_COUNTER      (3)         //指定した回数に達した場合マウス操作がされていない事を示す
+/*
+スロー速度を設定する。0.83fならば全速力の83%になる
+イカ速に応じて調整が必要 
+*/
+#define AXIS_HALF_INPUT_FACTOR  (0.83f)
+
+#define MOUSE_READ_COUNTER      (4)         //指定した回数に達した場合マウス操作がされていない事を示す
 #define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y上限
 #define Y_ANGLE_LOWER_LIMIT     (-1500)     //Y下限
 
@@ -53,10 +59,10 @@ ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプ
 キーボードの特性上、進行方向と逆方向に移行する場合、最速（15ms）で行わないと
 無入力期間が入りイカダッシュの停止と判定されイカロールが失敗する
 このため、方向入力を指定分だけ延長することで対処する
-値が3なら3*15msの延長となる
+値が4なら4*15msの延長となる
 値を大きくすれば、イカロールが出しやすくなるがイカダッシュの停止が遅れる
 */
-#define DIR_FOLLOWING			(3)		//イカロールを行いやすくする
+#define DIR_FOLLOWING			(4)		//イカロールを行いやすくする
 
 #define MAX_NAME_LEN            (256)
 #define MAX_PACKET_LEN          (64)
@@ -87,6 +93,7 @@ usb-SIGMACHIP_USB_Keyboard-event-kbd
 usb-Topre_Corporation_Realforce_108-event-kbd 
 */
 #define KEYBOARD_NAME       "Topre_Corporation_Realforce_108"
+//#define KEYBOARD_NAME       "usb-SIGMACHIP_USB_Keyboard"
 #define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
 
 #define PROCON_NAME         "Nintendo Co., Ltd. Pro Controller"     //Procon名は固定
@@ -140,7 +147,7 @@ typedef struct {
     //9 - 11
     unsigned char R_Axis[3];        //12Bit単位でX値、Y値が入っている
     //12
-    unsigned char Reserved;         //unknown value
+    unsigned char Reserved;         //unknown value (Vibrator_input_report)
     //13 - 63
     unsigned char GyroData[51];     //Gyro sensor data is repeated 3 times. Each with 5ms sampling.
 } ProconData;
@@ -224,32 +231,6 @@ int ReadCheck(int Fd)
     return ret;
 }
 
-int ToInt(unsigned char *pBuf)
-{
-    int ret;
-
-    ret = pBuf[3];
-    ret <<= 8;
-    ret |= pBuf[2];
-    ret <<= 8;
-    ret |= pBuf[1];
-    ret <<= 8;
-    ret |= pBuf[0];
-
-    return ret;
-}
-
-short ToShort(unsigned char *pBuf)
-{
-    int ret;
-
-    ret = pBuf[1];
-    ret <<= 8;
-    ret |= pBuf[0];
-
-    return ret;
-}
-
 unsigned short XValGet(unsigned char *pBuf)
 {
     unsigned short ret;
@@ -325,10 +306,9 @@ void* KeybordThread(void *p)
             {
                 //復活地点へスーパージャンプ
                 ReturnToBase = 1;
-                ReturnToBaseCnt = 0;
             }
 
-			if (KeyMap[KEY_8])
+            if (KeyMap[KEY_8])
             {
                 if (IkaToggle)
                 {
@@ -694,9 +674,9 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
 
 void GyroEmurate(ProconData *pPad)
 {
-	ProconGyroData gyro;
+    ProconGyroData gyro;
 
-	memset(&gyro, 0, sizeof(gyro));
+    memset(&gyro, 0, sizeof(gyro));
 
     //X角度、Z角度変化しない
     gyro.Z_Angle = 4096;
@@ -711,7 +691,7 @@ void GyroEmurate(ProconData *pPad)
         MouseMap.Y = 0;
     }
 
-	if (YTotal < Y_ANGLE_LOWER_LIMIT)
+    if (YTotal < Y_ANGLE_LOWER_LIMIT)
     {
         //これ以上進まないようにする
         YTotal = Y_ANGLE_LOWER_LIMIT;
@@ -724,11 +704,10 @@ void GyroEmurate(ProconData *pPad)
     //上下
     gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
 
-
-	//左右
-	gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
-	//加速方向がマウスと逆なので逆転させる
-	gyro.Z_Accel *= -1;
+    //左右
+    gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
+    //加速方向がマウスと逆なので逆転させる
+    gyro.Z_Accel *= -1;
 
     //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
     //コンバータでは同じデータを3つ格納する
@@ -736,7 +715,7 @@ void GyroEmurate(ProconData *pPad)
     memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
 
-	MouseReadCnt++;
+    MouseReadCnt++;
     if (MouseReadCnt > MOUSE_READ_COUNTER)
     {
         //マウス操作無し、XYを0にする
@@ -752,7 +731,7 @@ void GyroEmurate(ProconData *pPad)
 スタート地点へスーパージャンプする
 ProconInputの呼び出し間隔は15msなのでProconInput内で呼ぶReturnToBaseMacroも 
 15ms間隔で呼ばれることになる 
-*/ 
+*/
 void ReturnToBaseMacro(ProconData *pPad)
 {
     if (ReturnToBase)
@@ -761,7 +740,7 @@ void ReturnToBaseMacro(ProconData *pPad)
         {
         case 0:
         case 1:
-            //マクロ開始から0ms-30msはイカ、マップ開いたことにする
+        case 2:
             pPad->ZL = 1;
             pPad->ZR = 0;
 
@@ -775,11 +754,11 @@ void ReturnToBaseMacro(ProconData *pPad)
             pPad->Left = 0;
             pPad->Right = 0;
 
-            ReturnToBaseCnt ++;
+            ReturnToBaseCnt++;
             break;
-        case 2:
         case 3:
-            //マクロ開始から30ms-60msはイカ、マップ、下、Aでスーパージャンプを実施
+        case 4:
+        case 5:
             pPad->ZL = 1;
             pPad->ZR = 0;
 
@@ -793,9 +772,10 @@ void ReturnToBaseMacro(ProconData *pPad)
             pPad->Left = 0;
             pPad->Right = 0;
 
-            ReturnToBaseCnt ++;
+            ReturnToBaseCnt++;
             break;
         default:
+            ReturnToBaseCnt = 0;
             ReturnToBase = 0;
             break;
         }
@@ -893,25 +873,28 @@ void ProconInput(ProconData *pPad)
         pPad->StickL = 1;
     }
 
-	if (KeyMap[KEY_KP8] == 1) 
-	{
-		pPad->Up = 1;
-	}
+    if (KeyMap[KEY_KP8] == 1)
+    {
+        pPad->Up = 1;
+    }
 
-	if (KeyMap[KEY_KP2] == 1)
-	{
-		pPad->Down = 1;
-	}
+    if (KeyMap[KEY_KP2] == 1)
+    {
+        pPad->Down = 1;
+    }
 
-	if (KeyMap[KEY_KP4] == 1) 
-	{
-		pPad->Left = 1;
-	}
+    if (KeyMap[KEY_KP4] == 1)
+    {
+        pPad->Left = 1;
+    }
 
-	if (KeyMap[KEY_KP6] == 1)
-	{
-		pPad->Right = 1;
-	}
+    if (KeyMap[KEY_KP6] == 1)
+    {
+        pPad->Right = 1;
+    }
+
+    //printf("StickL X=%d, Y=%d\n", XValGet(pPad->L_Axis), YValGet(pPad->L_Axis));
+    //printf("StickR X=%d, Y=%d\n", XValGet(pPad->R_Axis), YValGet(pPad->R_Axis));
 
     //左スティック
     dir = KeyMap[KEY_W] << 3;
@@ -920,16 +903,16 @@ void ProconInput(ProconData *pPad)
     dir |= KeyMap[KEY_A];
 
     if ((dir == 0) && (DirPrevCnt <= DIR_FOLLOWING))
-	{
-		DirPrevCnt ++;
-		StickInput(pPad->L_Axis, DirPrev);
-	}
-	else
-	{
-		StickInput(pPad->L_Axis, dir);
-		DirPrev = dir;
-		DirPrevCnt = 0;
-	}
+    {
+        DirPrevCnt++;
+        StickInput(pPad->L_Axis, DirPrev);
+    }
+    else
+    {
+        StickInput(pPad->L_Axis, dir);
+        DirPrev = dir;
+        DirPrevCnt = 0;
+    }
 
     //右スティック
     dir = KeyMap[KEY_UP] << 3;
@@ -949,8 +932,8 @@ void ProconInput(ProconData *pPad)
     pthread_mutex_lock(&MouseMtx);
 
     //mouse
-	GyroEmurate(pPad);
-    
+    GyroEmurate(pPad);
+
     if (MouseMap.R)
     {
         //サブ
@@ -959,7 +942,7 @@ void ProconInput(ProconData *pPad)
 
     if (MouseMap.L)
     {
-        
+
         if (MWButtonToggle == 0)
         {
             //メイン単発
@@ -997,7 +980,7 @@ void ProconInput(ProconData *pPad)
             pPad->ZL = 0;
         }
     }
-    
+
     if (MouseMap.Extra)
     {
         if (MWButtonToggle == 0)
@@ -1014,7 +997,7 @@ void ProconInput(ProconData *pPad)
             }
         }
         else
-        {   
+        {
             //メイン単発
             pPad->ZR = 1;
         }
@@ -1027,11 +1010,11 @@ void ProconInput(ProconData *pPad)
         MouseMap.Wheel = 0;
     }
 
-	if (MouseMap.Middle)
-	{
-		//スペシャル
-		pPad->StickR = 1;
-	}
+    if (MouseMap.Middle)
+    {
+        //スペシャル
+        pPad->StickR = 1;
+    }
 
     pthread_mutex_unlock(&MouseMtx);
 }
@@ -1040,6 +1023,7 @@ void* InputReportThread(void *p)
 {
     int ret;
     int len;
+    //int i;
     unsigned char buf[MAX_PACKET_LEN];
 
     printf("InputReportThread start.\n");
@@ -1066,11 +1050,47 @@ void* InputReportThread(void *p)
             continue;
         }
 
+
         if (buf[0] == 0x30)
         {
             if (GamePadMode == 0)
             {
-                ProconInput((ProconData*)buf);
+                ProconInput((ProconData *)buf);
+            }
+        }
+        else
+        {
+            if (buf[0] == 0x21)
+            {
+                if ((buf[13] == 0x90) && (buf[14] == 0x10))
+                {
+                    if ((buf[15] == 0x10) && (buf[16] == 0x80))
+                    {
+                        //スティック補正情報を変更する
+                        buf[20] = 0xB2;
+                        buf[21] = 0xA1;
+
+                        XValSet(&buf[22], AXIS_MAX_INPUT - 1);
+                        YValSet(&buf[22], AXIS_MAX_INPUT - 1);
+                        XValSet(&buf[25], AXIS_CENTER);
+                        YValSet(&buf[25], AXIS_CENTER);
+                        XValSet(&buf[28], AXIS_MAX_INPUT);
+                        YValSet(&buf[28], AXIS_MAX_INPUT);
+
+                        buf[31] = 0xB2;
+                        buf[32] = 0xA1;
+
+                        XValSet(&buf[33], AXIS_MAX_INPUT - 1);
+                        YValSet(&buf[33], AXIS_MAX_INPUT - 1);
+                        XValSet(&buf[36], AXIS_CENTER);
+                        YValSet(&buf[36], AXIS_CENTER);
+                        XValSet(&buf[39], AXIS_MAX_INPUT);
+                        YValSet(&buf[39], AXIS_MAX_INPUT);
+
+                        buf[42] = 0xB2;
+                        buf[43] = 0xA1;
+                    }
+                }
             }
         }
 
