@@ -1067,9 +1067,12 @@ void* InputReportThread(void *p)
                     if ((buf[15] == 0x10) && (buf[16] == 0x80))
                     {
                         //スティック補正情報を変更する
+
+                        //SPI address 0x8010, Magic 0xxB2 0xxA1 for user available calibration
                         buf[20] = 0xB2;
                         buf[21] = 0xA1;
 
+                        //SPI address 0x8012, Actual User Left Stick Calibration data
                         XValSet(&buf[22], AXIS_MAX_INPUT - 1);
                         YValSet(&buf[22], AXIS_MAX_INPUT - 1);
                         XValSet(&buf[25], AXIS_CENTER);
@@ -1077,15 +1080,17 @@ void* InputReportThread(void *p)
                         XValSet(&buf[28], AXIS_MAX_INPUT);
                         YValSet(&buf[28], AXIS_MAX_INPUT);
 
+                        //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
                         buf[31] = 0xB2;
                         buf[32] = 0xA1;
 
-                        XValSet(&buf[33], AXIS_MAX_INPUT - 1);
-                        YValSet(&buf[33], AXIS_MAX_INPUT - 1);
-                        XValSet(&buf[36], AXIS_CENTER);
-                        YValSet(&buf[36], AXIS_CENTER);
-                        XValSet(&buf[39], AXIS_MAX_INPUT);
-                        YValSet(&buf[39], AXIS_MAX_INPUT);
+                        //SPI address 0x801D, Actual user Right Stick Calibration data
+                        XValSet(&buf[33], AXIS_CENTER);
+                        YValSet(&buf[33], AXIS_CENTER);
+                        XValSet(&buf[36], AXIS_MAX_INPUT);
+                        YValSet(&buf[36], AXIS_MAX_INPUT);
+                        XValSet(&buf[39], AXIS_MAX_INPUT - 1);
+                        YValSet(&buf[39], AXIS_MAX_INPUT - 1);
 
                         buf[42] = 0xB2;
                         buf[43] = 0xA1;
