@@ -12,7 +12,8 @@ ver.0.03 2022/09/03 デバイスの選択を自動化、ソース整理
 ver.0.04 2022/09/11 イカロールを出しやすくした 
 ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加 
 ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプを追加 
-ver 0.07 2022/10/29 スティック補正を不要にした  
+ver 0.07 2022/10/29 スティック補正を不要にした 
+ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正  
 */
 
 #include <stdio.h>
@@ -741,7 +742,9 @@ void ReturnToBaseMacro(ProconData *pPad)
         case 0:
         case 1:
         case 2:
-            pPad->ZL = 1;
+            pPad->R = 0;
+            pPad->L = 0;
+            pPad->ZL = 0;
             pPad->ZR = 0;
 
             pPad->A = 0;
@@ -759,7 +762,29 @@ void ReturnToBaseMacro(ProconData *pPad)
         case 3:
         case 4:
         case 5:
-            pPad->ZL = 1;
+            pPad->R = 0;
+            pPad->L = 0;
+            pPad->ZL = 0;
+            pPad->ZR = 0;
+
+            pPad->A = 0;
+            pPad->B = 0;
+            pPad->X = 1;
+            pPad->Y = 0;
+
+            pPad->Up = 0;
+            pPad->Down = 1;
+            pPad->Left = 0;
+            pPad->Right = 0;
+
+            ReturnToBaseCnt++;
+            break;
+        case 6:
+        case 7:
+        case 8:
+            pPad->R = 0;
+            pPad->L = 0;
+            pPad->ZL = 0;
             pPad->ZR = 0;
 
             pPad->A = 1;
@@ -769,6 +794,26 @@ void ReturnToBaseMacro(ProconData *pPad)
 
             pPad->Up = 0;
             pPad->Down = 1;
+            pPad->Left = 0;
+            pPad->Right = 0;
+
+            ReturnToBaseCnt++;
+            break;
+        case 9:
+        case 10:
+        case 11:
+            pPad->R = 0;
+            pPad->L = 0;
+            pPad->ZL = 0;
+            pPad->ZR = 0;
+
+            pPad->A = 1;
+            pPad->B = 0;
+            pPad->X = 1;
+            pPad->Y = 0;
+
+            pPad->Up = 0;
+            pPad->Down = 0;
             pPad->Left = 0;
             pPad->Right = 0;
 
@@ -926,9 +971,7 @@ void ProconInput(ProconData *pPad)
         //スティック補正のとき、0キーを押し続けてスティックぐるぐるをおこなう。
         StickDrawCircle(pPad);
     }
-
-    ReturnToBaseMacro(pPad);
-
+   
     pthread_mutex_lock(&MouseMtx);
 
     //mouse
@@ -1017,6 +1060,8 @@ void ProconInput(ProconData *pPad)
     }
 
     pthread_mutex_unlock(&MouseMtx);
+
+    ReturnToBaseMacro(pPad);
 }
 
 void* InputReportThread(void *p)
@@ -1194,7 +1239,7 @@ int ProconHidrawNameGet(char *HidrawName)
         return -1;
     }
 
-    found = 0;
+    found = -1;
     dp = readdir(dir);
     while (dp != NULL)
     {
