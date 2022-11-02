@@ -56,6 +56,7 @@ sudo ./proconcon.out
 | 4             | +             |                                                   | 
 | 8             |               | Mouse Sideの人、イカ逆転                           | 
 | 9             |               | Mouse Lの単射、連射入れ替え                        | 
+| 0             |               | Stickで円を描く、補正用                            | 
 | WASD          | Stick L       |                                                   | 
 | SHIFT L       |               | SHIFT L＋WASDで遅い動き                            | 
 | SPACE         | B             |                                                   |
@@ -67,7 +68,6 @@ sudo ./proconcon.out
 | T             | L             |                                                   | 
 | Y             | R             |                                                   | 
 | U             | Stick L Push  |                                                   | 
-| O             |               | Stickで円を描く、補正用                            | 
 | Z             |               | スタート地点へスーパージャンプ                     | 
 | Num2          | Hat Down      |                                                   | 
 | Num4          | Hat Left      |                                                   | 
