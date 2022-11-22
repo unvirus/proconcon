@@ -37,8 +37,10 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 ## 起動方法
 sudo ./load_procon.sh  
 sudo ./proconcon.out  
-本プログラムはCUIで利用をお勧めします。
-
+  
+本プログラムはCUIで利用をお勧めします。  
+マウス感度は1600 DPIを基準に調整すると良さそうです。  
+  
 ## センターリング  
 試合が始まった時、1キーを1秒ほど間隔を開けて2回押してください。  
 この操作で、マウスのセンターリングが行われます。  
