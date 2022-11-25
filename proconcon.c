@@ -51,7 +51,7 @@ ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更さ�
 スロー速度を設定する。0.83fならば全速力の83%になる
 イカ速に応じて調整が必要 
 */
-#define AXIS_HALF_INPUT_FACTOR  (0.83f)
+#define AXIS_HALF_INPUT_FACTOR  (0.65f)
 
 #define MOUSE_READ_COUNTER      (4)         //指定した回数に達した場合マウス操作がされていない事を示す
 #define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y上限
@@ -1130,8 +1130,11 @@ void* InputReportThread(void *p)
                         buf[21] = 0xA1;
 
                         //SPI address 0x8012, Actual User Left Stick Calibration data
-                        XValSet(&buf[22], AXIS_MAX_INPUT - 1);
-                        YValSet(&buf[22], AXIS_MAX_INPUT - 1);
+
+                        //XValSet(&buf[22], AXIS_MAX_INPUT - 1);
+                        //YValSet(&buf[22], AXIS_MAX_INPUT - 1);
+                        XValSet(&buf[22], 0);
+                        XValSet(&buf[22], 0);
                         XValSet(&buf[25], AXIS_CENTER);
                         YValSet(&buf[25], AXIS_CENTER);
                         XValSet(&buf[28], AXIS_MAX_INPUT);
@@ -1146,8 +1149,11 @@ void* InputReportThread(void *p)
                         YValSet(&buf[33], AXIS_CENTER);
                         XValSet(&buf[36], AXIS_MAX_INPUT);
                         YValSet(&buf[36], AXIS_MAX_INPUT);
-                        XValSet(&buf[39], AXIS_MAX_INPUT - 1);
-                        YValSet(&buf[39], AXIS_MAX_INPUT - 1);
+                        XValSet(&buf[39], 0);
+                        YValSet(&buf[39], 0);
+
+                        //XValSet(&buf[39], AXIS_MAX_INPUT - 1);
+                        //YValSet(&buf[39], AXIS_MAX_INPUT - 1);
 
                         buf[42] = 0xB2;
                         buf[43] = 0xA1;
