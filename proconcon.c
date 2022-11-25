@@ -13,7 +13,8 @@ ver.0.04 2022/09/11 イカロールを出しやすくした
 ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除、メイン連射追加 
 ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプを追加 
 ver 0.07 2022/10/29 スティック補正を不要にした 
-ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正  
+ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正 
+ver 0.08 2022/11/01 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した
 */
 
 #include <stdio.h>
@@ -95,7 +96,9 @@ usb-Topre_Corporation_Realforce_108-event-kbd
 */
 #define KEYBOARD_NAME       "Topre_Corporation_Realforce_108"
 //#define KEYBOARD_NAME       "usb-SIGMACHIP_USB_Keyboard"
-#define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
+
+//#define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
+#define MOUSE_NAME          "usb-Logitech_G403_HERO_Gaming_Mouse"
 
 #define PROCON_NAME         "Nintendo Co., Ltd. Pro Controller"     //Procon名は固定
 
@@ -1068,7 +1071,6 @@ void* InputReportThread(void *p)
 {
     int ret;
     int len;
-    //int i;
     unsigned char buf[MAX_PACKET_LEN];
 
     printf("InputReportThread start.\n");
@@ -1101,6 +1103,16 @@ void* InputReportThread(void *p)
             if (GamePadMode == 0)
             {
                 ProconInput((ProconData *)buf);
+            }
+            else 
+            {
+#if 0
+                ProconGyroData gyro;
+                memcpy(&gyro, ((ProconData *)buf)->GyroData, sizeof(gyro));
+                printf("x1=%d y1=%d z1=%d x2=%d y2=%d z2=%d.\n", 
+                       gyro.X_Angle,gyro.Y_Angle, gyro.Z_Angle,
+                       gyro.X_Accel, gyro.Y_Accel, gyro.Z_Accel);
+#endif
             }
         }
         else
@@ -1140,6 +1152,14 @@ void* InputReportThread(void *p)
                         buf[42] = 0xB2;
                         buf[43] = 0xA1;
                     }
+                }
+
+                if ((buf[13] == 0x82) && (buf[14] == 0x02))
+                {
+                    //restore previous firmware version
+                    printf("FirmVer=%d.%d\n", buf[15], buf[16]);
+                    buf[15] = 0x03;
+                    buf[16] = 0x48;
                 }
             }
         }
