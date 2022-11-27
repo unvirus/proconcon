@@ -10,7 +10,12 @@
 Ver 0.09 2022/11/25  
 Pro controller Firm ver 4.33でジャイロ加速度値が変更されたので仮対策しました。  
 機能追加はしていないので、プロコンのファームを更新していない場合は  
-プログラムを適応する必要はありません。  
+プログラムを適応する必要はありません。
+proconcon_old.cが該当します。
+
+Ver 0.10 2022/11/27
+マウスコンバーターの動作にproconを不要にした。
+proconcon.cが該当します。
 
 ## 必要な物
 ラズベリーパイ 4B   
@@ -33,7 +38,7 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 ラズベリーパイにProcon、Keyboard、Mouseを接続する。  
 ラズベリーパイをUSBケーブルでNintendo SWITCHに接続する。  
   
-![IMG_E1374](https://user-images.githubusercontent.com/83897755/189526222-d5b93a43-8da5-405b-a07e-c4226972e039.JPG)
+![IMG_E1374](https://user-images.githubusercontent.com/83897755/204125349-ef4d7021-fbfd-4df3-9745-1a1058430d0c.jpg)
   
 ## 起動方法
 sudo ./load_procon.sh  
