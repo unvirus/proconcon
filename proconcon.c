@@ -14,7 +14,8 @@ ver.0.05 2022/09/20 自動ドット打ち処理に不具合があるので削除
 ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプを追加 
 ver 0.07 2022/10/29 スティック補正を不要にした 
 ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正 
-ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した
+ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した 
+ver 0.10 2022/11/27 プロコン接続を不要にした 
 */
 
 #include <stdio.h>
@@ -78,6 +79,8 @@ ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更さ�
 #define DEV_KEYBOARD            (0)
 #define DEV_MOUSE               (1)
 
+#define PAD_INPUT_WAIT          (16)
+
 /*
 各自で利用するキーボードとマウスを指定する 
 指定する名称は以下で確認する 
@@ -100,7 +103,10 @@ usb-Topre_Corporation_Realforce_108-event-kbd
 //#define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
 #define MOUSE_NAME          "usb-Logitech_G403_HERO_Gaming_Mouse"
 
-#define PROCON_NAME         "Nintendo Co., Ltd. Pro Controller"     //Procon名は固定
+//プロコンの個体識別用 MacAddress　16進数、6桁で好きな値を設定可能
+#define MAC_ADDRESS         { 0x11, 0x22, 0x33, 0xaa, 0xbb, 0xcc }
+//#define MAC_ADDRESS         { 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45 }
+//#define MAC_ADDRESS         { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB }
 
 typedef struct {
     short Y_Angle;                //約4200から約-4200、平置き時約-668
@@ -167,9 +173,7 @@ typedef struct {
     unsigned char Extra;            //Side button 2
 } MouseData;
 
-int GamePadMode;
 int Processing;
-int fProcon;
 int fGadget;
 int fKeyboard;
 int fMouse;
@@ -190,6 +194,8 @@ int RappidFire;
 int MWButtonToggle;
 int ReturnToBase;
 int ReturnToBaseCnt;
+int HidMode;
+int GyroEnable;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -199,10 +205,13 @@ pthread_t thMouse;
 pthread_t thOutputReport;
 pthread_t thInputReport;
 pthread_mutex_t MouseMtx;
+pthread_mutex_t UsbMtx;
 MouseData MouseMap;
 unsigned char DirPrev;
 unsigned char DirPrevCnt;
 unsigned char KeyMap[KEY_WIMAX];
+unsigned char BakProconData[11];
+unsigned char MacAddress[] = MAC_ADDRESS;
 
 int ReadCheck(int Fd)
 {
@@ -376,18 +385,6 @@ void* KeybordThread(void *p)
                 YFollowing -= 0.1f;
                 printf("Y_FOLLOWING=%f\n", YFollowing);
             }
-
-            if (KeyMap[KEY_F11] == 1)
-            {
-                printf("Keybord mode.\n");
-                GamePadMode = 0;
-            }
-
-            if (KeyMap[KEY_F12] == 1)
-            {
-                printf("GamePad mode.\n");
-                GamePadMode = 1;
-            }
         }
     }
 
@@ -485,13 +482,50 @@ void* MouseThread(void *p)
     return NULL;
 }
 
+unsigned char Spi6050[] = {
+    0xC5, 0x1A, 0x4A, 0x6C, 0xC0, 0x4A, 0xFF, 0xFF, 
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+
+unsigned char Spi6080[] = { 
+    0x50, 0xFD, 0x00, 0x00, 0xC6, 0x0F, 0x0F, 0x30, 
+    0x61, 0x96, 0x30, 0xF3, 0xD4, 0x14, 0x54, 0x41, 
+    0x15, 0x54, 0xC7, 0x79, 0x9C, 0x33, 0x36, 0x63 };
+
+unsigned char Spi6098[] = { 
+    0x0F, 0x30, 0x61, 0x96, 0x30, 0xF3, 0xD4, 0x14, 
+    0x54, 0x41, 0x15, 0x54, 0xC7, 0x79, 0x9C, 0x33,
+    0x36, 0x63 };
+
+unsigned char Spi603d[] = { 
+    0xD9, 0xF5, 0x63, 0x93, 0x67, 0x75, 0x26, 0x06, 
+    0x65, 0x8F, 0x17, 0x74, 0x63, 0x26, 0x65, 0xFC, 
+    0xE5, 0x64, 0xFF, 0x32, 0x32, 0x32, 0xFF, 0xFF, 
+    0xFF };
+
+unsigned char Spi8026[] = {
+    0xB2, 0xA1, 0x0E, 0x01, 0xDA, 0xFF, 0xD2, 0x01, 
+    0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x09, 0x00, 
+    0xE6, 0xFF, 0xB4, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 
+    0x3B, 0x34 };
+
+unsigned char Spi8028[] = {
+    0x72, 0x00, 0xF1, 0xFF, 0xD2, 0x01, 0x00, 0x40, 
+    0x00, 0x40, 0x00, 0x40, 0xFF, 0xFF, 0xE9, 0xFF, 
+    0xB0, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 0x3B, 0x34 };
+
 void* OutputReportThread(void *p)
 {
     int ret;
     int len;
-    unsigned char buf[MAX_PACKET_LEN];
+    int i;
+    unsigned int spiAddress;
+    unsigned char rd[MAX_PACKET_LEN];
+    unsigned char wt[MAX_PACKET_LEN];
+    unsigned char timeStamp;
 
     printf("OutputReportThread start.\n");
+
+    timeStamp = 0;
 
     while (Processing)
     {
@@ -501,7 +535,7 @@ void* OutputReportThread(void *p)
             continue;
         }
 
-        ret = read(fGadget, buf, sizeof(buf));
+        ret = read(fGadget, rd, sizeof(rd));
         if (ret == -1)
         {
             printf("Gadget OutputReport read error %d.\n", errno);
@@ -514,13 +548,428 @@ void* OutputReportThread(void *p)
             continue;
         }
 
-        len = ret;
-        ret = write(fProcon, &buf, len);
-        if (ret == -1)
+        memset(wt, 0, sizeof(wt));
+        len = 0;
+        timeStamp ++;
+
+        switch (rd[0])
         {
-            printf("Procon OutputReport write error %d.\n", errno);
-            Processing = 0;
+        case 0x01:
+            if (rd[10] == 0x01)
+            {
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x81;
+                wt[14] = 0x01;
+                wt[15] = 0x03;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x02)
+            {
+                //get mac address
+                timeStamp++;
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x82;
+                wt[14] = 0x02;
+                wt[15] = 0x03;
+                wt[16] = 0x48;
+                wt[17] = 0x03;
+                wt[18] = 0x02;
+
+                for (i = 0; i < sizeof(MacAddress); i++)
+                {
+                    wt[i + 19] = MacAddress[sizeof(MacAddress) - 1 - i];
+                }
+                wt[25] = 1;
+                wt[26] = 1;
+
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x03)
+            {
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x03;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x04)
+            {
+                timeStamp++;
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x83;
+                wt[14] = 0x04;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x08)
+            {
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x08;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x10)
+            {
+                memcpy(&spiAddress, &rd[11], 4);
+
+                if (spiAddress == 0x6000)
+                {
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x00;
+                    wt[16] = 0x60;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x10;
+                    memset(&wt[20], 0xFF, 16);
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x603d)
+                {
+                    //LFactory configuration & calibration 2
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x3d;
+                    wt[16] = 0x60;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x19;
+
+                    memcpy(&wt[20], Spi603d, sizeof(Spi603d));
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x6050)
+                {
+                    //Body #RGB color, 24-bit
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x50;
+                    wt[16] = 0x60;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x0D;
+                    memcpy(&wt[20], Spi6050, sizeof(Spi6050));
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x6080)
+                {
+                    //Factory Sensor and Stick device parameters
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x80;
+                    wt[16] = 0x60;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x18;
+
+                    //6-Axis Horizontal
+                    memcpy(&wt[20], Spi6080, sizeof(Spi6080));
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x6098)
+                {
+                    //Factory Stick device parameters 2
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x98;
+                    wt[16] = 0x60;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x12;
+
+                    memcpy(&wt[20], Spi6098, sizeof(Spi6098));
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x8010)
+                {
+                    //user available calibration
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x10;
+                    wt[16] = 0x80;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = rd[15];
+
+                    //SPI address 0x8010, Magic 0xxB2 0xxA1 for user available calibration
+                    wt[20] = 0xB2;
+                    wt[21] = 0xA1;
+
+                    //SPI address 0x8012, Actual User Left Stick Calibration data
+                    XValSet(&wt[22], AXIS_MAX_INPUT - 1);
+                    XValSet(&wt[22], AXIS_MAX_INPUT - 1);
+                    XValSet(&wt[25], AXIS_CENTER);
+                    YValSet(&wt[25], AXIS_CENTER);
+                    XValSet(&wt[28], AXIS_MAX_INPUT);
+                    YValSet(&wt[28], AXIS_MAX_INPUT);
+
+                    //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
+                    wt[31] = 0xB2;
+                    wt[32] = 0xA1;
+
+                    //SPI address 0x801D, Actual user Right Stick Calibration data
+                    XValSet(&wt[33], AXIS_CENTER);
+                    YValSet(&wt[33], AXIS_CENTER);
+                    XValSet(&wt[36], AXIS_MAX_INPUT);
+                    YValSet(&wt[36], AXIS_MAX_INPUT);
+                    XValSet(&wt[39], AXIS_MAX_INPUT - 1);
+                    YValSet(&wt[39], AXIS_MAX_INPUT - 1);
+
+                    wt[42] = 0xB2;
+                    wt[43] = 0xA1;
+
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x801b)
+                {
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x1b;
+                    wt[16] = 0x80;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = rd[15];
+
+                    //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
+                    wt[20] = 0xB2;
+                    wt[21] = 0xA1;
+
+                    //SPI address 0x801D, Actual user Right Stick Calibration data
+                    XValSet(&wt[22], AXIS_CENTER);
+                    YValSet(&wt[22], AXIS_CENTER);
+                    XValSet(&wt[25], AXIS_MAX_INPUT);
+                    YValSet(&wt[25], AXIS_MAX_INPUT);
+                    XValSet(&wt[28], AXIS_MAX_INPUT - 1);
+                    YValSet(&wt[28], AXIS_MAX_INPUT - 1);
+
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x8026)
+                {
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x26;
+                    wt[16] = 0x80;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x1A;
+
+                    memcpy(&wt[20], Spi8026, sizeof(Spi8026));
+                    len = MAX_PACKET_LEN;
+                }
+                else if (spiAddress == 0x8028)
+                {
+                    //LFactory configuration & calibration 2
+                    wt[0] = 0x21;
+                    wt[1] = timeStamp;
+                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                    wt[13] = 0x90;
+                    wt[14] = 0x10;
+                    wt[15] = 0x28;
+                    wt[16] = 0x80;
+                    wt[17] = 0x00;
+                    wt[18] = 0x00;
+                    wt[19] = 0x18;
+
+                    memcpy(&wt[20], Spi8028, sizeof(Spi8028));
+                    len = MAX_PACKET_LEN;
+                }
+                else
+                {
+                    printf("spi read address=0x%04x\n", spiAddress);
+                }
+            }
+            else if (rd[10] == 0x11)
+            {
+                 memcpy(&spiAddress, &rd[11], 4);
+
+                 if (spiAddress == 0x8010)
+                 {
+                     //default calibration L
+                     wt[0] = 0x21;
+                     wt[1] = timeStamp;
+                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                     wt[13] = 0x80;
+                     wt[14] = 0x11;
+                     len = MAX_PACKET_LEN;
+
+                     memset(&wt[31], 0xFF, 13);
+                 }
+                 else if (spiAddress == 0x801b)
+                 {
+                     //default calibration R
+                     wt[0] = 0x21;
+                     wt[1] = timeStamp;
+                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                     wt[13] = 0x80;
+                     wt[14] = 0x11;
+                     len = MAX_PACKET_LEN;
+
+                     memset(&wt[31], 0xFF, 13);
+
+                 }
+                 else if (spiAddress == 0x8026)
+                 {
+                     wt[0] = 0x21;
+                     wt[1] = timeStamp;
+                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                     wt[13] = 0x80;
+                     wt[14] = 0x11;
+                     len = MAX_PACKET_LEN;
+                 }
+                 else
+                 {
+                     printf("spi write addrss=0x%04x\n", spiAddress);
+                 }
+            }
+            else if (rd[10] == 0x21)
+            {
+                //unknown
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x21;
+                wt[15] = rd[11];
+                
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x22)
+            {
+                //unknown
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x22;
+                wt[15] = rd[11];
+
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x30)
+            {
+                //unknown
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x30;
+                wt[15] = rd[11];
+
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x40)
+            {
+                //Subcommand 0x40: Enable IMU (6-Axis sensor)
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x40;
+
+                GyroEnable = 1;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[10] == 0x48)
+            {
+                //Enable vibration
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x48;
+
+                len = MAX_PACKET_LEN;
+            }
+            else
+            {
+                printf("Output Report=[0]:0x%02x [10]:0x%02x\n", rd[0], rd[10]);
+            }
+            break;
+        case 0x10:
+            //do nothing
             continue;
+        case 0x80:
+            if (rd[1] == 0x01)
+            {
+                //get mac address
+                wt[0] = 0x81;
+                wt[1] = 0x01;
+                wt[3] = 0x03;
+                memcpy(&wt[4], MacAddress, sizeof(MacAddress));
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[1] == 0x02)
+            {
+                //hand shake
+                wt[0] = 0x81;
+                wt[1] = 0x02;
+                len = MAX_PACKET_LEN;
+            }
+            else if (rd[1] == 0x04)
+            {
+                //hid mode
+                HidMode = 1;
+            }
+            else if (rd[1] == 0x05)
+            {
+                //bt mode
+                HidMode = 0;
+            }
+            else
+            {
+                printf("Output Report=[0]:0x%02x [1]:0x%02x\n", rd[0], rd[1]);
+            }
+            break;
+        default:
+            printf("Output Report=[0]:0x%02x\n", rd[0]);
+            break;
+        }
+
+        if (len)
+        {
+            pthread_mutex_lock(&UsbMtx);
+            ret = write(fGadget, &wt, len);
+            pthread_mutex_unlock(&UsbMtx);
+
+            if (ret == -1)
+            {
+                printf("Gadget OutputReport write error %d.\n", errno);
+                Processing = 0;
+                continue;
+            }
         }
     }
 
@@ -618,12 +1067,12 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER - StraightHalf);
+            YValSet(pAxis, AXIS_CENTER - StraightHalf + 1);
         }
         else
         {
             XValSet(pAxis, AXIS_CENTER);
-            YValSet(pAxis, AXIS_CENTER - Straight);
+            YValSet(pAxis, AXIS_CENTER - Straight + 1);
         }
     }
     else if (Dir == 0x03)
@@ -834,6 +1283,9 @@ void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
 
+    //常にON
+    pPad->Grip = 1;
+
     //key
     if (KeyMap[KEY_1])
     {
@@ -921,6 +1373,14 @@ void ProconInput(ProconData *pPad)
         pPad->StickL = 1;
     }
 
+    if (KeyMap[KEY_L] == 1)
+    {
+        //tesla menu
+        pPad->L = 1;
+        pPad->Down = 1;
+        pPad->StickR = 1;
+    }
+
     if (KeyMap[KEY_KP8] == 1)
     {
         pPad->Up = 1;
@@ -974,11 +1434,17 @@ void ProconInput(ProconData *pPad)
         //スティック補正のとき、0キーを押し続けてスティックぐるぐるをおこなう。
         StickDrawCircle(pPad);
     }
-   
+
+    //printf("StickL X=%d, Y=%d\n", XValGet(pPad->L_Axis), YValGet(pPad->L_Axis));
+    //printf("StickR X=%d, Y=%d\n", XValGet(pPad->R_Axis), YValGet(pPad->R_Axis));
+
     pthread_mutex_lock(&MouseMtx);
 
     //mouse
-    GyroEmurate(pPad);
+    if (GyroEnable)
+    {
+        GyroEmurate(pPad);
+    }
 
     if (MouseMap.R)
     {
@@ -1070,119 +1536,42 @@ void ProconInput(ProconData *pPad)
 void* InputReportThread(void *p)
 {
     int ret;
-    int len;
-    unsigned char buf[MAX_PACKET_LEN];
+    unsigned char timeStamp;
+    ProconData procon;
+    unsigned char *ptr;
 
     printf("InputReportThread start.\n");
 
+    timeStamp = 0;
     while (Processing)
     {
-        ret = ReadCheck(fProcon);
-        if (ret <= 0)
-        {
-            continue;
-        }
+        //wait 16ms
+        usleep(PAD_INPUT_WAIT * 1000);
 
-        ret = read(fProcon, buf, sizeof(buf));
-        if (ret == -1)
+        if (HidMode)
         {
-            printf("fProcon InputReport read error %d.\n", errno);
-            Processing = 0;
-            continue;
-        }
-        len = ret;
+            memset(&procon, 0, sizeof(procon));
+            timeStamp += (PAD_INPUT_WAIT / 8);
 
-        if (len == 0)
-        {
-            continue;
-        }
+            procon.ReportId = 0x30;
+            procon.TimeStamp = timeStamp;
+            procon.ConnectNo = 1;
+            procon.BatteryLevel = 9;
+            ProconInput(&procon);
 
+            ptr = (unsigned char *)&procon;
+            memcpy(BakProconData, &ptr[2], sizeof(BakProconData));
 
-        if (buf[0] == 0x30)
-        {
-            if (GamePadMode == 0)
+            pthread_mutex_lock(&UsbMtx);
+            ret = write(fGadget, &procon, sizeof(procon));
+            pthread_mutex_unlock(&UsbMtx);
+
+            if (ret == -1)
             {
-                ProconInput((ProconData *)buf);
+                printf("fGadget InputReport write error %d.\n", errno);
+                Processing = 0;
+                continue;
             }
-            else 
-            {
-#if 0
-                ProconGyroData gyro;
-                memcpy(&gyro, ((ProconData *)buf)->GyroData, sizeof(gyro));
-                printf("x1=%d y1=%d z1=%d x2=%d y2=%d z2=%d.\n", 
-                       gyro.X_Angle,gyro.Y_Angle, gyro.Z_Angle,
-                       gyro.X_Accel, gyro.Y_Accel, gyro.Z_Accel);
-#endif
-            }
-        }
-        else
-        {
-            if (buf[0] == 0x21)
-            {
-                if ((buf[13] == 0x90) && (buf[14] == 0x10))
-                {
-                    if ((buf[15] == 0x10) && (buf[16] == 0x80))
-                    {
-                        //スティック補正情報を変更する
-
-                        //SPI address 0x8010, Magic 0xxB2 0xxA1 for user available calibration
-                        buf[20] = 0xB2;
-                        buf[21] = 0xA1;
-
-                        //SPI address 0x8012, Actual User Left Stick Calibration data
-
-                        //XValSet(&buf[22], AXIS_MAX_INPUT - 1);
-                        //YValSet(&buf[22], AXIS_MAX_INPUT - 1);
-                        XValSet(&buf[22], 0);
-                        XValSet(&buf[22], 0);
-                        XValSet(&buf[25], AXIS_CENTER);
-                        YValSet(&buf[25], AXIS_CENTER);
-                        XValSet(&buf[28], AXIS_MAX_INPUT);
-                        YValSet(&buf[28], AXIS_MAX_INPUT);
-
-                        //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
-                        buf[31] = 0xB2;
-                        buf[32] = 0xA1;
-
-                        //SPI address 0x801D, Actual user Right Stick Calibration data
-                        XValSet(&buf[33], AXIS_CENTER);
-                        YValSet(&buf[33], AXIS_CENTER);
-                        XValSet(&buf[36], AXIS_MAX_INPUT);
-                        YValSet(&buf[36], AXIS_MAX_INPUT);
-                        XValSet(&buf[39], 0);
-                        YValSet(&buf[39], 0);
-
-                        //XValSet(&buf[39], AXIS_MAX_INPUT - 1);
-                        //YValSet(&buf[39], AXIS_MAX_INPUT - 1);
-
-                        buf[42] = 0xB2;
-                        buf[43] = 0xA1;
-                    }
-                }
-
-                if ((buf[13] == 0x82) && (buf[14] == 0x02))
-                {
-                    //restore previous firmware version
-                    printf("FirmVer=%d.%d\n", buf[15], buf[16]);
-                    buf[15] = 0x03;
-                    buf[16] = 0x48;
-                }
-            }
-        }
-
-        /*
-        USB給電対応のためUSBFがVBUS切断検知を行わない
-        このため、Nintendo Switch <-> Raspberry Pi間のUSBケーブルを切断するタイミングで
-        write()を行うと処理が戻らない
-        USB Gadget Driverを改造すれば解消される
-        無改造の場合、再接続時のBusResetのときにエラーが返る
-        */
-        ret = write(fGadget, buf, len);
-        if (ret == -1)
-        {
-            printf("fGadget InputReport write error %d.\n", errno);
-            Processing = 0;
-            continue;
         }
     }
 
@@ -1248,57 +1637,6 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
     return found;
 }
 
-int ProconHidrawNameGet(char *HidrawName)
-{
-    int ret;
-    int found;
-    int fd;
-    DIR *dir;
-    struct dirent *dp;
-    char *p;
-    char buf[MAX_BUFFER_LEN];
-
-    dir = opendir("/sys/class/hidraw");
-    if (dir == NULL)
-    {
-        printf("opendir error %d", errno);
-        return -1;
-    }
-
-    found = -1;
-    dp = readdir(dir);
-    while (dp != NULL)
-    {
-        if (dp->d_type == DT_LNK)
-        {
-            sprintf(buf, "/sys/class/hidraw/%s/device/uevent", dp->d_name);
-            fd = open(buf, O_RDONLY);
-            if (fd != -1)
-            {
-                ret = read(fd, buf, MAX_BUFFER_LEN);
-                close(fd);
-
-                if (ret > 0)
-                {
-                    p = strstr(buf, PROCON_NAME);
-                    if (p)
-                    {
-                        sprintf(HidrawName, "/dev/%s", dp->d_name);
-                        printf("Procon:%s\n", HidrawName);
-                        found = 0;
-                        break;
-                    }
-                }
-            }
-        }
-
-        dp = readdir(dir);
-    }
-
-    closedir(dir);
-    return found;
-}
-
 int main(int argc, char *argv[])
 {
     int ret;
@@ -1320,7 +1658,6 @@ int main(int argc, char *argv[])
     Processing = 1;
     fKeyboard = -1;
     fMouse = -1;
-    fProcon = -1;
     fGadget = -1;
     YTotal = 0;
     Straight = AXIS_MAX_INPUT;
@@ -1328,7 +1665,12 @@ int main(int argc, char *argv[])
     Diagonal = (int)(0.7071f * (float)AXIS_MAX_INPUT); //0.7071 is cos 45
     DiagonalHalf = (int)((float)Diagonal * AXIS_HALF_INPUT_FACTOR);
 
+    HidMode = 0;
+    GyroEnable = 0;
+    memset(BakProconData, 0, sizeof(BakProconData));
+
     pthread_mutex_init(&MouseMtx, NULL);
+    pthread_mutex_init(&UsbMtx, NULL);
 
     ret = InputDevNameGet(DEV_KEYBOARD, KEYBOARD_NAME, devName);
     if (ret == -1)
@@ -1358,22 +1700,6 @@ int main(int argc, char *argv[])
     if (fMouse == -1)
     {
         printf("Mouse open error %d.\n", errno);
-        Processing = 0;
-        goto EXIT;
-    }
-
-    ret = ProconHidrawNameGet(devName);
-    if (ret == -1)
-    {
-        printf("Procon is not found.\n");
-        Processing = 0;
-        goto EXIT;
-    }
-
-    fProcon = open(devName, O_RDWR);
-    if (fProcon == -1)
-    {
-        printf("Procon open error %d.\n", errno);
         Processing = 0;
         goto EXIT;
     }
@@ -1427,11 +1753,6 @@ int main(int argc, char *argv[])
     thMouseCreated = 1;
 
 EXIT:
-    while (Processing)
-    {
-        sleep(3);
-    }
-
     if (thKeyboardCreated)
     {
         pthread_join(thKeyboard, NULL);
@@ -1467,12 +1788,8 @@ EXIT:
         close(fGadget);
     }
 
-    if (fProcon != -1)
-    {
-        close(fProcon);
-    }
-
     pthread_mutex_destroy(&MouseMtx);
+    pthread_mutex_destroy(&UsbMtx);
 
     printf("Procon Converter exit.\n");
     return 0;
