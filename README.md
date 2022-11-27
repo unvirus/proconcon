@@ -19,7 +19,7 @@ proconcon.cが該当します。
 
 ## 必要な物
 ラズベリーパイ 4B   
-Nintendo SWITCH、スプラトゥーン3、プロコン  
+Nintendo SWITCH、スプラトゥーン3
 マウス、キーボード、各機材の接続ケーブル  
   
 ラズベリーパイのUSB Gadgetを利用するため、電源をUSB-C以外から得る必要があります。  
