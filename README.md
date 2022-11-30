@@ -44,7 +44,7 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 sudo ./load_procon.sh  
 sudo ./proconcon.out  
   
-マウス感度は1600 DPIをあたりで調整すると良さそうです。 
+マウス感度は1600 DPIをあたりで調整すると良さそうです。  
 本プログラムはCUI(CLI)で利用してください。  
 デスクトップ環境では本プログラム使用中に範囲外のクリックなどが発生し、誤操作の原因になります。  
 ![IMG_E1374](https://user-images.githubusercontent.com/83897755/204680187-3678ed45-c9b6-499e-8ff4-b0cc18fd81f5.jpg)  
