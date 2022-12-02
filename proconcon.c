@@ -15,7 +15,8 @@ ver 0.06 2022/10/04 排他処理修正、復活地点にスーパージャンプ
 ver 0.07 2022/10/29 スティック補正を不要にした 
 ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正 
 ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した 
-ver 0.10 2022/11/27 プロコン接続を不要にした 
+ver 0.10 2022/11/27 プロコン接続を不要にした
+ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対応、コメント追加 
 */
 
 #include <stdio.h>
@@ -555,8 +556,11 @@ void* OutputReportThread(void *p)
         switch (rd[0])
         {
         case 0x01:
+            //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_subcommands_notes.md
+
             if (rd[10] == 0x01)
             {
+                //Subcommand 0x01: Bluetooth manual pairing
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -567,7 +571,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x02)
             {
-                //get mac address
+                //gSubcommand 0x02: Request device info
                 timeStamp++;
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
@@ -590,6 +594,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x03)
             {
+                //Subcommand 0x03: Set input report mode
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -599,6 +604,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x04)
             {
+                //Subcommand 0x04: Trigger buttons elapsed time
                 timeStamp++;
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
@@ -607,8 +613,19 @@ void* OutputReportThread(void *p)
                 wt[14] = 0x04;
                 len = MAX_PACKET_LEN;
             }
+            else if (rd[10] == 0x06)
+            {
+                //Subcommand 0x06: Set HCI state (disconnect/page/pair/turn off)
+                wt[0] = 0x21;
+                wt[1] = timeStamp;
+                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[13] = 0x80;
+                wt[14] = 0x06;
+                len = MAX_PACKET_LEN;
+            }
             else if (rd[10] == 0x08)
             {
+                //Subcommand 0x08: Set shipment low power state
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -618,10 +635,13 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x10)
             {
+                //Subcommand 0x10: SPI flash read
+                //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md
                 memcpy(&spiAddress, &rd[11], 4);
 
                 if (spiAddress == 0x6000)
                 {
+                    //Serial number in non-extended ASCII.
                     wt[0] = 0x21;
                     wt[1] = timeStamp;
                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -748,6 +768,7 @@ void* OutputReportThread(void *p)
                 }
                 else if (spiAddress == 0x801b)
                 {
+                    //Magic xB2 xA1 for user available calibration and Actual user Right Stick Calibration data
                     wt[0] = 0x21;
                     wt[1] = timeStamp;
                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -775,6 +796,7 @@ void* OutputReportThread(void *p)
                 }
                 else if (spiAddress == 0x8026)
                 {
+                    //User 6-Axis Motion Sensor calibration
                     wt[0] = 0x21;
                     wt[1] = timeStamp;
                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -813,7 +835,9 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x11)
             {
-                 memcpy(&spiAddress, &rd[11], 4);
+                //Subcommand 0x11: SPI flash Write
+
+                memcpy(&spiAddress, &rd[11], 4);
 
                  if (spiAddress == 0x8010)
                  {
@@ -856,7 +880,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x21)
             {
-                //unknown
+                //Subcommand 0x21: Set NFC/IR MCU configuration
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -868,7 +892,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x22)
             {
-                //unknown
+                //Subcommand 0x22: Set NFC/IR MCU state
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -880,7 +904,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x30)
             {
-                //unknown
+                //Subcommand 0x30: Set player lights
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -904,7 +928,7 @@ void* OutputReportThread(void *p)
             }
             else if (rd[10] == 0x48)
             {
-                //Enable vibration
+                //Subcommand 0x48: Enable vibration
                 wt[0] = 0x21;
                 wt[1] = timeStamp;
                 memcpy(&wt[2], BakProconData, sizeof(BakProconData));
@@ -919,9 +943,11 @@ void* OutputReportThread(void *p)
             }
             break;
         case 0x10:
-            //do nothing
+            //unknown
             continue;
         case 0x80:
+            //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/USB-HID-Notes.md
+
             if (rd[1] == 0x01)
             {
                 //get mac address
@@ -938,15 +964,26 @@ void* OutputReportThread(void *p)
                 wt[1] = 0x02;
                 len = MAX_PACKET_LEN;
             }
+            else if (rd[1] == 0x03)
+            {
+                //baudrate to 3Mbit
+                wt[0] = 0x81;
+                wt[1] = 0x03;
+                len = MAX_PACKET_LEN;
+            }
             else if (rd[1] == 0x04)
             {
                 //hid mode
                 HidMode = 1;
+
+                //no response
             }
             else if (rd[1] == 0x05)
             {
                 //bt mode
                 HidMode = 0;
+
+                //no response
             }
             else
             {
