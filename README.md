@@ -35,7 +35,7 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 各自のデバイス名に合わせてください。  
   
 ## 接続方法
-ラズベリーパイにProcon、Keyboard、Mouseを接続する。  
+ラズベリーパイにKeyboard、Mouseを接続する。  
 ラズベリーパイをUSBケーブルでNintendo SWITCHに接続する。  
   
 ![IMG_E1374](https://user-images.githubusercontent.com/83897755/204125349-ef4d7021-fbfd-4df3-9745-1a1058430d0c.jpg)
