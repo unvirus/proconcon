@@ -13,9 +13,9 @@ Pro controller Firm ver 4.33でジャイロ加速度値が変更されたので�
 プログラムを適応する必要はありません。  
 proconcon_old.cが該当します。  
   
-Ver 0.11 2022/12/02  
-Swicthのサスペンド時のプロコンコマンドに対応しました。  
-proconcon.cが該当します。  
+Ver 0.12 2022/12/11  
+サブ慣性キャンセルを追加、人イカ逆転モード廃止。 
+サブ慣性キャンセルはイカダッシュ開始時に自動でおこないます。  
 
 ## 必要な物
 ラズベリーパイ 4B   
@@ -44,7 +44,7 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 sudo ./load_procon.sh  
 sudo ./proconcon.out  
   
-マウス感度は1600 DPIをあたりで調整すると良さそうです。  
+マウス感度は800-1600 DPIをあたりで調整すると良さそうです。  
 本プログラムはCUI(CLI)で利用してください。  
 デスクトップ環境では本プログラム使用中に範囲外のクリックなどが発生し、誤動作の原因になります。  
 ![IMG_E1374](https://user-images.githubusercontent.com/83897755/204680187-3678ed45-c9b6-499e-8ff4-b0cc18fd81f5.jpg)  
@@ -65,7 +65,7 @@ sudo ./proconcon.out
 | 2             | Capture       |                                                   |  
 | 3             | -             |                                                   |  
 | 4             | +             |                                                   | 
-| 8             |               | Mouse Sideの人、イカ逆転                           | 
+| 8             |               | Mouse Sideの人、イカ逆転（廃止)                   | 
 | 9             |               | Mouse Lの単射、連射入れ替え                        | 
 | 0             |               | Stickで円を描く、補正用                            | 
 | WASD          | Stick L       |                                                   | 
