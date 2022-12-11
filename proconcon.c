@@ -16,7 +16,8 @@ ver 0.07 2022/10/29 スティック補正を不要にした
 ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージャンプのバグを修正 
 ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した 
 ver 0.10 2022/11/27 プロコン接続を不要にした
-ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対応、コメント追加 
+ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対応、コメント追加
+ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセル機能を追加 
 */
 
 #include <stdio.h>
@@ -42,8 +43,8 @@ ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対
 マウスの座標系とは異なるのでユーザー毎に調整が必要になる
 */
 #define X_SENSITIVITY           (20.0f)     //マウス操作、左右感度
-#define Y_SENSITIVITY           (23.0f)     //マウス操作、上下感度
-#define Y_FOLLOWING             (1.50f)     //マウス操作、上下追従補正
+#define Y_SENSITIVITY           (24.0f)     //マウス操作、上下感度
+#define Y_FOLLOWING             (1.20f)     //マウス操作、上下追従補正
 
 //スティック入力値
 #define AXIS_CENTER             (1920)
@@ -81,6 +82,11 @@ ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対
 #define DEV_MOUSE               (1)
 
 #define PAD_INPUT_WAIT          (16)
+
+#define INERTIA_CANCEL_ENABLE
+#define DELEY_FOR_AFTER_JUMP	(50)	//ジャンプ後、慣性キャンセルを行うようになるまでの時間、16ms単位
+#define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
+#define DELEY_FOR_AFTER_SUB_WP	(12)	//サブ攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 
 /*
 各自で利用するキーボードとマウスを指定する 
@@ -186,7 +192,6 @@ int thBannerCreated;
 int MouseReadCnt;
 int YTotal;
 int Slow;
-int IkaToggle;
 int Straight;
 int StraightHalf;
 int Diagonal;
@@ -197,6 +202,11 @@ int ReturnToBase;
 int ReturnToBaseCnt;
 int HidMode;
 int GyroEnable;
+int InertiaCancelCnt;
+unsigned int MainWpTick;
+unsigned int SubWpTick;
+unsigned int JumpTick;
+unsigned int InputTick;
 float XSensitivity;
 float YSensitivity;
 float YFollowing;
@@ -320,19 +330,6 @@ void* KeybordThread(void *p)
             {
                 //復活地点へスーパージャンプ
                 ReturnToBase = 1;
-            }
-
-            if (KeyMap[KEY_8])
-            {
-                if (IkaToggle)
-                {
-                    IkaToggle = 0;
-                }
-                else
-                {
-                    IkaToggle = 1;
-                }
-                printf("IkaToggle=%d\n", IkaToggle);
             }
 
             if (KeyMap[KEY_9])
@@ -1316,9 +1313,37 @@ void ReturnToBaseMacro(ProconData *pPad)
     }
 }
 
+#ifdef INERTIA_CANCEL_ENABLE
+void InertiaCancel(ProconData *pPad)
+{
+	switch (InertiaCancelCnt)
+	{
+	case 0:
+	case 1:
+	case 2:
+		pPad->R = 1;
+		InertiaCancelCnt++;
+		break;
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+		pPad->R = 1;
+		pPad->ZL = 1;
+		InertiaCancelCnt++;
+		break;
+	default:
+		pPad->ZL = 1;
+	}
+}
+#endif
+
 void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
+
+	//通常利用の範囲では桁あふれしない
+	InputTick ++;
 
     //常にON
     pPad->Grip = 1;
@@ -1384,6 +1409,7 @@ void ProconInput(ProconData *pPad)
     {
         //ジャンプ
         pPad->B = 1;
+		JumpTick = InputTick;
     }
 
     if (KeyMap[KEY_Q] == 1)
@@ -1487,6 +1513,7 @@ void ProconInput(ProconData *pPad)
     {
         //サブ
         pPad->R = 1;
+		SubWpTick = InputTick;
     }
 
     if (MouseMap.L)
@@ -1510,25 +1537,35 @@ void ProconInput(ProconData *pPad)
                 RappidFire = 1;
             }
         }
+
+		MainWpTick = InputTick;
     }
 
-    if (IkaToggle)
+#ifdef INERTIA_CANCEL_ENABLE
+	if (MouseMap.Side)
     {
-        pPad->ZL = 1;
-    }
-
-    if (MouseMap.Side)
+		if (((JumpTick + DELEY_FOR_AFTER_JUMP) < InputTick) && 
+			((MainWpTick + DELEY_FOR_AFTER_MAIN_WP) < InputTick) &&
+			((SubWpTick + DELEY_FOR_AFTER_SUB_WP) < InputTick)){
+			InertiaCancel(pPad);
+		}
+		else
+		{
+			//ジャンプ、メイン、サブ実施後は慣性キャンセル無しでイカになる
+			pPad->ZL = 1;
+			InertiaCancelCnt = 10;
+		}
+	}
+	else
+	{
+		InertiaCancelCnt = 0;
+	}
+#else
+	if (MouseMap.Side)
     {
-        //イカ
-        if (IkaToggle == 0)
-        {
-            pPad->ZL = 1;
-        }
-        else
-        {
-            pPad->ZL = 0;
-        }
-    }
+		pPad->ZL = 1;
+	}
+#endif
 
     if (MouseMap.Extra)
     {
