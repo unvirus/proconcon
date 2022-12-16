@@ -17,7 +17,8 @@ ver 0.08 2022/11/01 プロコン検出処理のバグを修正、スーパージ
 ver 0.09 2022/11/25 Firmware Ver4.33で、ジャイロ加速度値が変更されているので仮対応した 
 ver 0.10 2022/11/27 プロコン接続を不要にした
 ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対応、コメント追加
-ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセル機能を追加 
+ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセル機能を追加
+ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整した
 */
 
 #include <stdio.h>
@@ -83,7 +84,7 @@ ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセ
 
 #define PAD_INPUT_WAIT          (16)
 
-#define INERTIA_CANCEL_ENABLE
+#define INERTIA_CANCEL_ENABLE			//サブ慣性キャンセル機能を無効にする場合はコメントアウトする	
 #define DELEY_FOR_AFTER_JUMP	(50)	//ジャンプ後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_SUB_WP	(12)	//サブ攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
@@ -500,6 +501,7 @@ unsigned char Spi603d[] = {
     0xE5, 0x64, 0xFF, 0x32, 0x32, 0x32, 0xFF, 0xFF, 
     0xFF };
 
+#if 0
 unsigned char Spi8026[] = {
     0xB2, 0xA1, 0x0E, 0x01, 0xDA, 0xFF, 0xD2, 0x01, 
     0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x09, 0x00, 
@@ -510,6 +512,20 @@ unsigned char Spi8028[] = {
     0x72, 0x00, 0xF1, 0xFF, 0xD2, 0x01, 0x00, 0x40, 
     0x00, 0x40, 0x00, 0x40, 0xFF, 0xFF, 0xE9, 0xFF, 
     0xB0, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 0x3B, 0x34 };
+#else
+unsigned char Spi8026[] = {
+    0xB2, 0xA1, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 
+    0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x09, 0x00, 
+    0xE6, 0xFF, 0xB4, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 
+    0x3B, 0x34 };
+
+unsigned char Spi8028[] = {
+    0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x40, 
+    0x00, 0x40, 0x00, 0x40, 0xFF, 0xFF, 0xE9, 0xFF, 
+    0xB0, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 0x3B, 0x34 };
+
+#endif
+
 
 void* OutputReportThread(void *p)
 {
@@ -1320,10 +1336,10 @@ void InertiaCancel(ProconData *pPad)
 	{
 	case 0:
 	case 1:
-	case 2:
 		pPad->R = 1;
 		InertiaCancelCnt++;
 		break;
+	case 2:
 	case 3:
 	case 4:
 	case 5:
@@ -1553,7 +1569,7 @@ void ProconInput(ProconData *pPad)
 		{
 			//ジャンプ、メイン、サブ実施後は慣性キャンセル無しでイカになる
 			pPad->ZL = 1;
-			InertiaCancelCnt = 10;
+			InertiaCancelCnt = 0xFF;
 		}
 	}
 	else
