@@ -19,6 +19,7 @@ ver 0.10 2022/11/27 プロコン接続を不要にした
 ver 0.11 2022/12/02 Swicthのサスペンド時のプロコンコマンドに対応、コメント追加
 ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセル機能を追加
 ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整した
+ver 0.14 2023/01/08 マウスを左右に振った時の追従性を向上
 */
 
 #include <stdio.h>
@@ -37,6 +38,9 @@ ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整し
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+
+//Validate polling interval
+//#define LOOP_TIME_CHECK
 
 /*
 スプラトゥーンでは、左右はジャイロの加速度で判断する
@@ -57,7 +61,6 @@ ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整し
 */
 #define AXIS_HALF_INPUT_FACTOR  (0.65f)
 
-#define MOUSE_READ_COUNTER      (4)         //指定した回数に達した場合マウス操作がされていない事を示す
 #define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y上限
 #define Y_ANGLE_LOWER_LIMIT     (-1500)     //Y下限
 
@@ -190,7 +193,6 @@ int thMouseCreated;
 int thOutputReportCreated;
 int thInputReportCreated;
 int thBannerCreated;
-int MouseReadCnt;
 int YTotal;
 int Slow;
 int Straight;
@@ -224,6 +226,29 @@ unsigned char DirPrevCnt;
 unsigned char KeyMap[KEY_WIMAX];
 unsigned char BakProconData[11];
 unsigned char MacAddress[] = MAC_ADDRESS;
+
+#ifdef LOOP_TIME_CHECK
+unsigned int TimeCheck(struct timespec Start, struct timespec End)
+{
+	unsigned int s, m;
+
+	s = (unsigned int)(End.tv_sec - Start.tv_sec);
+	s *= 1000;
+
+	Start.tv_nsec /= 1000000;
+	End.tv_nsec /= 1000000;
+
+	if (End.tv_nsec >= Start.tv_nsec) {
+		m = (unsigned int)(End.tv_nsec - Start.tv_nsec);
+	} else {
+		m = (unsigned int)((long)1000 - Start.tv_nsec);
+        m += End.tv_nsec;
+        s -= 1000;
+	}
+
+	return (s + m);
+}
+#endif
 
 int ReadCheck(int Fd)
 {
@@ -448,7 +473,6 @@ void* MouseThread(void *p)
                 break;
             }
 
-            MouseReadCnt = 0;
             pthread_mutex_unlock(&MouseMtx);
         }
         else if (event.type == EV_REL)
@@ -459,9 +483,10 @@ void* MouseThread(void *p)
 
             switch (event.code)
             {
-            case REL_X:
-                MouseMap.X = event.value;
-                break;
+			case REL_X:
+				//add
+                MouseMap.X += event.value;
+				break;
             case REL_Y:
                 MouseMap.Y = event.value;
                 break;
@@ -472,7 +497,6 @@ void* MouseThread(void *p)
                 break;
             }
 
-            MouseReadCnt = 0;
             pthread_mutex_unlock(&MouseMtx);
         }
     }
@@ -1177,7 +1201,7 @@ void StickInput(unsigned char *pAxis, unsigned char Dir)
 
 void GyroEmurate(ProconData *pPad)
 {
-    ProconGyroData gyro;
+	ProconGyroData gyro;
 
     memset(&gyro, 0, sizeof(gyro));
 
@@ -1201,16 +1225,36 @@ void GyroEmurate(ProconData *pPad)
         MouseMap.Y = 0;
     }
 
-    gyro.Y_Angle = YTotal;
+    gyro.Y_Angle = (short)YTotal;
     //printf("YTotal=%d\n", YTotal);
 
     //上下
     gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
 
+	if (gyro.Y_Accel < -16000) 
+	{
+		gyro.Y_Accel = -16000;
+	}
+
+	if (gyro.Y_Accel > 16000) 
+	{
+		gyro.Y_Accel = 16000;
+	}
+
     //左右
     gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
     //加速方向がマウスと逆なので逆転させる
     gyro.Z_Accel *= -1;
+
+	if (gyro.Z_Accel < -16000) 
+	{
+		gyro.Z_Accel = -16000;
+	}
+
+	if (gyro.Z_Accel > 16000) 
+	{
+		gyro.Z_Accel = 16000;
+	}
 
     //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
     //コンバータでは同じデータを3つ格納する
@@ -1218,15 +1262,8 @@ void GyroEmurate(ProconData *pPad)
     memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
 
-    MouseReadCnt++;
-    if (MouseReadCnt > MOUSE_READ_COUNTER)
-    {
-        //マウス操作無し、XYを0にする
-        //マウスは変化があった場合にデータが来る、よってXYに値が残っている
-        MouseMap.X = 0;
-        MouseMap.Y = 0;
-        MouseReadCnt = 0;
-    }
+	MouseMap.X = 0;
+    MouseMap.Y = 0;
 }
 
 /*
@@ -1629,13 +1666,21 @@ void* InputReportThread(void *p)
     unsigned char timeStamp;
     ProconData procon;
     unsigned char *ptr;
+#ifdef LOOP_TIME_CHECK
+	struct timespec start;
+	struct timespec end;
+#endif
 
     printf("InputReportThread start.\n");
+
+#ifdef LOOP_TIME_CHECK
+	clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+#endif
 
     timeStamp = 0;
     while (Processing)
     {
-        //wait 16ms
+		//wait 16ms
         usleep(PAD_INPUT_WAIT * 1000);
 
         if (HidMode)
@@ -1662,6 +1707,12 @@ void* InputReportThread(void *p)
                 Processing = 0;
                 continue;
             }
+
+#ifdef LOOP_TIME_CHECK
+			clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+			printf("%d ms\n", TimeCheck(start, end));
+			start = end;
+#endif
         }
     }
 
