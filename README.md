@@ -10,8 +10,9 @@
 Ver 0.09 2022/11/25  
 旧バージョン、動作にはプロコンが必要です。  
   
-Ver 0.14 2023/01/08    
-マウスを左右に振ったときの追従性能を向上しました。  
+Ver 0.15 2023/02/12    
+進行方向と反対方向入力で自動イカロールを行うようにしました。
+無効にする場合は#define SQUID_ROLL_ENABLEをコメントアウトしてください。
     
 ## 必要な物
 ラズベリーパイ 4B     
@@ -62,9 +63,7 @@ sudo ./proconcon.out
 | 2             | Capture       |                                                   |  
 | 3             | -             |                                                   |  
 | 4             | +             |                                                   | 
-| 8             |               | Mouse Sideの人、イカ逆転（廃止)                   | 
 | 9             |               | Mouse Lの単射、連射入れ替え                        | 
-| 0             |               | Stickで円を描く、補正用                            | 
 | WASD          | Stick L       |                                                   | 
 | SHIFT L       |               | SHIFT L＋WASDで遅い動き                            | 
 | SPACE         | B             |                                                   |
@@ -88,8 +87,6 @@ sudo ./proconcon.out
 | F8            |               | Y感度-0.1、デバッグ用                              | 
 | F9            |               | Y追従+0.1、デバッグ用                              | 
 | F10           |               | Y追従-0.1、デバッグ用                              | 
-| F11           |               | Keyboardモード                                     | 
-| F12           |               | GamePadモード                                      | 
 | Mouse R       | R             |                                                   | 
 | Mouse L       | ZR            |                                                   | 
 | Mouse Side    | ZL            |                                                   | 
