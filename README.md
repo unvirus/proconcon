@@ -80,18 +80,18 @@ sudo ./proconcon.out
 | H             | ZL            | Added in ver 0.16                                 | 
 | J             | ZR            | Added in ver 0.16                                 | 
 | U             | Stick L Push  |                                                   | 
-| Z             |               | スタート地点へスーパージャンプ                     | 
+| Z             |               | Super jump to starting point                     | 
 | Num2          | Hat Down      |                                                   | 
 | Num4          | Hat Left      |                                                   | 
 | Num6          | Hat Right     |                                                   | 
 | Num8          | Hat Up        |                                                   | 
 | Arrow Key     | Stick R       |                                                   | 
-| F5            |               | X感度+0.1、デバッグ用                              | 
-| F6            |               | X感度-0.1、デバッグ用                              | 
-| F7            |               | Y感度+0.1、デバッグ用                              | 
-| F8            |               | Y感度-0.1、デバッグ用                              | 
-| F9            |               | Y追従+0.1、デバッグ用                              | 
-| F10           |               | Y追従-0.1、デバッグ用                              | 
+| F5            |               | X sensitivity+0.1 デバッグ用                       | 
+| F6            |               | X sensitivity-0.1 デバッグ用                       | 
+| F7            |               | Y sensitivity+0.1 デバッグ用                       | 
+| F8            |               | Y sensitivity-0.1 デバッグ用                       | 
+| F9            |               | Y following+0.1 デバッグ用                       | 
+| F10           |               | Y following-0.1、デバッグ用                       | 
 | Mouse R       | R             |                                                   | 
 | Mouse L       | ZR            |                                                   | 
 | Mouse Side    | ZL            |                                                   | 
