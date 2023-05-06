@@ -13,9 +13,9 @@
 Ver 0.09 2022/11/25  
 旧バージョン、動作にはプロコンが必要です。  
   
-Ver 0.15 2023/02/12    
-進行方向と反対方向入力で自動イカロールを行うようにしました。  
-無効にする場合は#define SQUID_ROLL_ENABLEをコメントアウトしてください。  
+Ver 0.16 2023/05/06    
+マウスを上下に強く動かすと座標が変になる不具合を修正。  
+横歩きモードを追加しました。（Qキーで有効、１キーで無効）  
     
 ## 必要な物
 ラズベリーパイ 4B     
@@ -62,7 +62,7 @@ sudo ./proconcon.out
 | Key           | ProCon        | Comment                                           |  
 | ------------- | ------------- | ------------------------------------------------- |  
 | ESC           | Home          |                                                   |
-| 1             | Y             | Centering                                         |  
+| 1             | Y             | Centering + stop walking sideways                 |  
 | 2             | Capture       |                                                   |  
 | 3             | -             |                                                   |  
 | 4             | +             |                                                   | 
@@ -70,13 +70,15 @@ sudo ./proconcon.out
 | WASD          | Stick L       |                                                   | 
 | SHIFT L       |               | SHIFT L＋WASDで遅い動き                            | 
 | SPACE         | B             |                                                   |
-| Q             |               | Centering                                         | 
+| Q             |               | Centering + walking sideways                      | 
 | E             | A             |                                                   | 
 | R             | X             |                                                   | 
 | F             | Hat Up        |                                                   | 
 | C             | Hat Down      |                                                   | 
 | T             | L             |                                                   | 
 | Y             | R             |                                                   | 
+| H             | ZL            | Added in ver 0.16                                 | 
+| J             | ZR            | Added in ver 0.16                                 | 
 | U             | Stick L Push  |                                                   | 
 | Z             |               | スタート地点へスーパージャンプ                     | 
 | Num2          | Hat Down      |                                                   | 
