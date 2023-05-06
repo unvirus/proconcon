@@ -21,6 +21,7 @@ ver 0.12 2022/12/11 人イカ逆転モードを廃止、サブ慣性キャンセ
 ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整した 
 ver 0.14 2023/01/08 マウスを左右に振った時の追従性を向上 
 ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で自動でイカロールする 
+ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる不具合を修正、センターリングホールドモードを追加  
 */
 
 #include <stdio.h>
@@ -46,7 +47,7 @@ ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で
 マウスの座標系とは異なるのでユーザー毎に調整が必要になる
 */
 #define X_SENSITIVITY           (20.0f)     //マウス操作、左右感度
-#define Y_SENSITIVITY           (24.0f)     //マウス操作、上下感度
+#define Y_SENSITIVITY           (25.0f)     //マウス操作、上下感度
 #define Y_FOLLOWING             (1.20f)     //マウス操作、上下追従補正
 
 //スティック入力値
@@ -83,8 +84,12 @@ ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で
 #define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_SUB_WP	(12)	//サブ攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define MOVE_STOP_TIME          (12)    //動作停止までの時間、16ms単位
-#define ROLL_INPUT_TIME			(10)    //イカロール受付時間、16ms単位  
+#define ROLL_INPUT_TIME			(15)    //イカロール受付時間、16ms単位  
 #define ROLL_JUMP_TIME			(25)    //イカロールジャンプ入力時間、16ms単位  
+#define Y_HOLD_TIME1            (20)    
+#define Y_HOLD_TIME2            (20)
+#define Y_HOLD_TIME3            (20)
+#define Y_HOLD_TIME4            (20)
 
 /*
 各自で利用するキーボードとマウスを指定する 
@@ -200,6 +205,8 @@ int ReturnToBaseCnt;
 int HidMode;
 int GyroEnable;
 int InertiaCancelCnt;
+int YHold;
+int YHoldCnt;
 unsigned int MainWpTick;
 unsigned int SubWpTick;
 unsigned int JumpTick;
@@ -1062,9 +1069,10 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             else{
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER + Straight);
+                RollKeyTick++;
             }
 
-            RollKeyTick++;
+            
         }
     }
     else if (Dir == 0x0c)
@@ -1084,9 +1092,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER + Diagonal);
                 YValSet(pAxis, AXIS_CENTER + Diagonal);
+                RollKeyTick++;
             }
-
-            RollKeyTick++;
         }
     }
     else if (Dir == 0x04)
@@ -1106,9 +1113,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER + Straight);
                 YValSet(pAxis, AXIS_CENTER);
+                RollKeyTick++;
             }
-
-			RollKeyTick++;
         }
 
     }
@@ -1129,9 +1135,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER + Diagonal);
                 YValSet(pAxis, AXIS_CENTER - Diagonal);
+                RollKeyTick++;
             }
-            
-			RollKeyTick++;
         }
     }
     else if (Dir == 0x02)
@@ -1151,9 +1156,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER - Straight);
+                RollKeyTick++;
             }
-            
-			RollKeyTick++;
         }
     }
     else if (Dir == 0x03)
@@ -1173,9 +1177,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER - Diagonal);
                 YValSet(pAxis, AXIS_CENTER - Diagonal);
+                RollKeyTick++;
             }
-
-            RollKeyTick++;
         }
     }
     else if (Dir == 0x01)
@@ -1195,9 +1198,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             } else {
                 XValSet(pAxis, AXIS_CENTER - Straight);
                 YValSet(pAxis, AXIS_CENTER);
+                RollKeyTick++;
             }
-            
-			RollKeyTick++;
         }
     }
     else if (Dir == 0x09)
@@ -1219,9 +1221,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             {
                 XValSet(pAxis, AXIS_CENTER - Diagonal);
                 YValSet(pAxis, AXIS_CENTER + Diagonal);
+                RollKeyTick++;
             }
-            
-			RollKeyTick++;
 		}
     }
     else
@@ -1255,6 +1256,8 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
 
 	if (RollKeyTick >= ROLL_INPUT_TIME) 
 	{
+        //printf("rool tick=%d\n", RollKeyTick);
+
         //イカロール方向を指定する
 
         if (RollDirPrev == 0x08)
@@ -1502,10 +1505,13 @@ void GyroEmurate(ProconData *pPad)
     //printf("YTotal=%d\n", YTotal);
 
     //上下
-    gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
-
-    //左右
+    if ((gyro.Y_Angle != Y_ANGLE_UPPPER_LIMIT) && (gyro.Y_Angle != Y_ANGLE_LOWER_LIMIT)) 
+    {
+        gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
+    }
+    
     gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
+    
     //加速方向がマウスと逆なので逆転させる
     gyro.Z_Accel *= -1;
 
@@ -1519,13 +1525,15 @@ void GyroEmurate(ProconData *pPad)
 
     //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
     //コンバータでは同じデータを3つ格納する
+    
     memcpy(&pPad->GyroData[0], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
-    
+        
     //マウスは変化があった場合にデータが来る、よってXYに値が残っている
     MouseMap.X = 0;
     MouseMap.Y = 0;
+    
 }
 
 /*
@@ -1673,6 +1681,44 @@ void DoSquidRoll(ProconData *pPad)
 	}
 }
 
+void YHoldMacro(ProconData *pPad)
+{
+    if (YHold == 0)
+    {
+        return;
+    }
+    else
+    {
+        if (YHoldCnt < Y_HOLD_TIME1)
+        {
+            pPad->Y = 0;
+            YHoldCnt ++;
+        }
+        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2))
+        {
+            pPad->Y = 1;
+            YTotal = 0;
+            YHoldCnt ++;
+        }
+        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2 + Y_HOLD_TIME3))
+        {
+            pPad->Y = 0;
+            YTotal = 0;
+            YHoldCnt ++;
+        }
+        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2 + Y_HOLD_TIME3 + Y_HOLD_TIME4))
+        {
+            pPad->Y = 1;
+            YTotal = 0;
+            YHoldCnt ++;
+        }
+        else
+        {
+            pPad->Y = 1;
+        }
+    }
+}
+
 void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
@@ -1689,6 +1735,9 @@ void ProconInput(ProconData *pPad)
         //視点リセット
         pPad->Y = 1;
         YTotal = 0;
+
+        //Y hold mode disable
+        YHold = 0;
     }
 
     if (KeyMap[KEY_2] == 1)
@@ -1749,9 +1798,10 @@ void ProconInput(ProconData *pPad)
 
     if (KeyMap[KEY_Q] == 1)
     {
-        //視点センターリング
-        YTotal = 0;
+        YHold = 1;
+        YHoldCnt = 0;
     }
+    YHoldMacro(pPad);
 
     if (KeyMap[KEY_T] == 1)
     {
@@ -1765,10 +1815,28 @@ void ProconInput(ProconData *pPad)
         pPad->R = 1;
     }
 
+    if (KeyMap[KEY_G] == 1)
+    {
+        //ZL
+        pPad->ZL = 1;
+    }
+
+    if (KeyMap[KEY_H] == 1)
+    {
+        //ZR
+        pPad->ZR = 1;
+    }
+
     if (KeyMap[KEY_U] == 1)
     {
         //L Stick
         pPad->StickL = 1;
+    }
+
+    if (KeyMap[KEY_O] == 1)
+    {
+        //R Stick
+        pPad->StickR = 1;
     }
 
     if (KeyMap[KEY_L] == 1)
