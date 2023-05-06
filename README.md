@@ -68,7 +68,7 @@ sudo ./proconcon.out
 | 4             | +             |                                                   | 
 | 9             |               | Mouse Lの単射、連射入れ替え                        | 
 | WASD          | Stick L       |                                                   | 
-| SHIFT L       |               | SHIFT L＋WASDで遅い動き                            | 
+| SHIFT L       |               | Move slowly with SHIFT L + WASD                   | 
 | SPACE         | B             |                                                   |
 | Q             |               | Centering + walking sideways                      | 
 | E             | A             |                                                   | 
@@ -91,7 +91,7 @@ sudo ./proconcon.out
 | F7            |               | Y sensitivity+0.1 デバッグ用                       | 
 | F8            |               | Y sensitivity-0.1 デバッグ用                       | 
 | F9            |               | Y following+0.1 デバッグ用                       | 
-| F10           |               | Y following-0.1、デバッグ用                       | 
+| F10           |               | Y following-0.1 デバッグ用                       | 
 | Mouse R       | R             |                                                   | 
 | Mouse L       | ZR            |                                                   | 
 | Mouse Side    | ZL            |                                                   | 
