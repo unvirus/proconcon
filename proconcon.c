@@ -79,6 +79,7 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 
 #define INERTIA_CANCEL_ENABLE			//自動サブ慣性キャンセル機能を無効にする場合はコメントアウトする	
 #define SQUID_ROLL_ENABLE               //自動イカロール機能を無効にする場合はコメントアウトする
+#define SIDE_WALK_ENABLE                //横歩きモード機能を無効にする場合はコメントアウトする    
 
 #define DELEY_FOR_AFTER_JUMP	(50)	//ジャンプ後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
@@ -86,10 +87,10 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 #define MOVE_STOP_TIME          (12)    //動作停止までの時間、16ms単位
 #define ROLL_INPUT_TIME			(15)    //イカロール受付時間、16ms単位  
 #define ROLL_JUMP_TIME			(25)    //イカロールジャンプ入力時間、16ms単位  
-#define Y_HOLD_TIME1            (20)    
-#define Y_HOLD_TIME2            (20)
-#define Y_HOLD_TIME3            (20)
-#define Y_HOLD_TIME4            (20)
+#define Y_HOLD_TIME1            (15)    
+#define Y_HOLD_TIME2            (15)
+#define Y_HOLD_TIME3            (15)
+#define Y_HOLD_TIME4            (15)
 
 /*
 各自で利用するキーボードとマウスを指定する 
@@ -1796,12 +1797,14 @@ void ProconInput(ProconData *pPad)
 		JumpTick = InputTick;
     }
 
+#ifdef SIDE_WALK_ENABLE
     if (KeyMap[KEY_Q] == 1)
     {
         YHold = 1;
         YHoldCnt = 0;
     }
     YHoldMacro(pPad);
+#endif
 
     if (KeyMap[KEY_T] == 1)
     {
