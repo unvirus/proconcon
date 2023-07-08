@@ -22,7 +22,8 @@ ver 0.13 2022/12/16 センタリング時、少し上を向くので微調整し
 ver 0.14 2023/01/08 マウスを左右に振った時の追従性を向上 
 ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で自動でイカロールする 
 ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる不具合を修正、センターリングホールドモードを追加  
-*/
+ver 0.17 2023/07/08 冗長なソースコードを整理しました。センターリングホールドモードは使いにくいので削除した 
+*/ 
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,9 +47,9 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 上下はジャイロの加速度と角度で判断する
 マウスの座標系とは異なるのでユーザー毎に調整が必要になる
 */
-#define X_SENSITIVITY           (20.0f)     //マウス操作、左右感度
-#define Y_SENSITIVITY           (25.0f)     //マウス操作、上下感度
-#define Y_FOLLOWING             (1.20f)     //マウス操作、上下追従補正
+#define X_SENSITIVITY           (17.2f)     //マウス操作、左右感度
+#define Y_SENSITIVITY           (20.2f)     //マウス操作、上下感度
+#define Y_FOLLOWING             (1.00f)     //マウス操作、上下追従補正
 
 //スティック入力値
 #define AXIS_CENTER             (1920)
@@ -60,12 +61,15 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 */
 #define AXIS_HALF_INPUT_FACTOR  (0.65f)
 
-#define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y上限
-#define Y_ANGLE_LOWER_LIMIT     (-1500)     //Y下限
+#define Y_ANGLE_UPPPER_LIMIT    (3000)      //Y angle imit
+#define Y_ANGLE_LOWER_LIMIT     (-1500)     //Y angle imit
+#define Y_ACCEL_UPPPER_LIMIT    (16000)     //Y acceleration limit    
+#define Y_ACCEL_LOWER_LIMIT     (-16000)    //Y acceleration limit 
 
 #define MAX_NAME_LEN            (256)
 #define MAX_PACKET_LEN          (64)
 #define MAX_BUFFER_LEN          (512)
+#define MAC_ADDRESS_LEN         (6)
 
 #define GADGET_NAME             "/dev/hidg0"
 
@@ -75,22 +79,27 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 #define DEV_KEYBOARD            (0)
 #define DEV_MOUSE               (1)
 
-#define PAD_INPUT_WAIT          (16)    //コントローラーの入力間隔
+#define PAD_INPUT_WAIT          (16)    //コントローラーの入力間隔(ms)
+#define PAD_INPUT_WAIT_MARGIN   (500000)
 
-#define INERTIA_CANCEL_ENABLE			//自動サブ慣性キャンセル機能を無効にする場合はコメントアウトする	
+#define INERTIA_CANCEL_ENABLE			//自動サブ慣性キャンセル機能を無効にする場合はコメントアウトする
 #define SQUID_ROLL_ENABLE               //自動イカロール機能を無効にする場合はコメントアウトする
-#define SIDE_WALK_ENABLE                //横歩きモード機能を無効にする場合はコメントアウトする    
 
 #define DELEY_FOR_AFTER_JUMP	(50)	//ジャンプ後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_SUB_WP	(12)	//サブ攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define MOVE_STOP_TIME          (12)    //動作停止までの時間、16ms単位
-#define ROLL_INPUT_TIME			(15)    //イカロール受付時間、16ms単位  
-#define ROLL_JUMP_TIME			(25)    //イカロールジャンプ入力時間、16ms単位  
-#define Y_HOLD_TIME1            (15)    
-#define Y_HOLD_TIME2            (15)
-#define Y_HOLD_TIME3            (15)
-#define Y_HOLD_TIME4            (15)
+#define ROLL_INPUT_TIME			(15)    //イカロール受付時間、16ms単位
+#define ROLL_JUMP_TIME			(25)    //イカロールジャンプ入力時間、16ms単位
+
+#define STICK_DIR_UP            (0x08)
+#define STICK_DIR_RIGHT_UP      (0x0C)
+#define STICK_DIR_RIGHT         (0x04)
+#define STICK_DIR_RIGHT_DOWN    (0x06)
+#define STICK_DIR_DOWN          (0x02)
+#define STICK_DIR_LEFT_DOWN     (0x03)
+#define STICK_DIR_LEFT          (0x01)
+#define STICK_DIR_LEFT_UP       (0x09)
 
 /*
 各自で利用するキーボードとマウスを指定する 
@@ -114,10 +123,7 @@ usb-Topre_Corporation_Realforce_108-event-kbd
 //#define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
 #define MOUSE_NAME          "usb-Logitech_G403_HERO_Gaming_Mouse"
 
-//プロコンの個体識別用 MacAddress　16進数、6桁で好きな値を設定可能
-#define MAC_ADDRESS         { 0x11, 0x22, 0x33, 0xaa, 0xbb, 0xcc }
-//#define MAC_ADDRESS         { 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45 }
-//#define MAC_ADDRESS         { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB }
+#define ROM_FILE_NAME       "./flashrom.bin"
 
 typedef struct {
     short Y_Angle;                //約4200から約-4200、平置き時約-668
@@ -192,22 +198,20 @@ int thKeyboardCreated;
 int thMouseCreated;
 int thOutputReportCreated;
 int thInputReportCreated;
-int thBannerCreated;
 int YTotal;
 int Slow;
 int Straight;
 int StraightHalf;
 int Diagonal;
 int DiagonalHalf;
-int RappidFire;
-int MWButtonToggle;
+int RapidFire;
+int MWBtnToggle;
 int ReturnToBase;
 int ReturnToBaseCnt;
 int HidMode;
 int GyroEnable;
 int InertiaCancelCnt;
-int YHold;
-int YHoldCnt;
+unsigned int RomSize;
 unsigned int MainWpTick;
 unsigned int SubWpTick;
 unsigned int JumpTick;
@@ -225,12 +229,12 @@ pthread_t thInputReport;
 pthread_mutex_t MouseMtx;
 pthread_mutex_t UsbMtx;
 MouseData MouseMap;
+unsigned char *pRomBuf;
 unsigned char DirPrev;
 unsigned char DirPrevCnt;
 unsigned char RollDirPrev;
 unsigned char KeyMap[KEY_WIMAX];
-unsigned char BakProconData[11];
-unsigned char MacAddress[] = MAC_ADDRESS;
+unsigned char BakupProconData[11];
 
 int ReadCheck(int Fd)
 {
@@ -260,41 +264,9 @@ int ReadCheck(int Fd)
         ret = -1;
     }
 
+    //if read data incoming, returns 1.
+    //0 is timeout.
     return ret;
-}
-
-unsigned short XValGet(unsigned char *pBuf)
-{
-    unsigned short ret;
-
-    ret = ((short)pBuf[1] & 0x0F) << 8;
-    ret |= (short)pBuf[0];
-
-    return ret;
-}
-
-unsigned short YValGet(unsigned char *pBuf)
-{
-    unsigned short ret;
-
-    ret = (short)pBuf[1] >> 4;
-    ret |= (short)pBuf[2] << 4;
-
-    return ret;
-}
-
-void XValSet(unsigned char *pBuf, unsigned short X)
-{
-    pBuf[0] = (unsigned char)(X & 0x00FF);
-    pBuf[1] &= 0xF0;
-    pBuf[1] |= (unsigned char)((X >> 8) & 0x000F);
-}
-
-void YValSet(unsigned char *pBuf, unsigned short Y)
-{
-    pBuf[1] &= 0x0F;
-    pBuf[1] |= (unsigned char)((Y << 4) & 0x00F0);
-    pBuf[2] = (unsigned char)((Y >> 4) & 0x00FF);
 }
 
 void* KeybordThread(void *p)
@@ -323,39 +295,42 @@ void* KeybordThread(void *p)
         if (event.type == EV_KEY)
         {
             //printf("code=0x%04x value=0x%08x.\n", event.code, event.value);
-            //event.valueの値は、0=Off、1=On、2＝Repeat
+            //event.value is 0=Off, 1=On, 2=Repeat
 
             if (event.value == 2)
             {
-                //リピート時は何もしない
+                //do nothing
                 continue;
             }
 
+            //update keyboard data
             KeyMap[event.code] = event.value;
 
-            //設定処理
             if (KeyMap[KEY_Z])
             {
-                //復活地点へスーパージャンプ
+                //super jump to base
                 ReturnToBase = 1;
             }
 
             if (KeyMap[KEY_9])
             {
-                //メイン単発、連射ボタンを入れ替える
-                if (MWButtonToggle)
+                if (MWBtnToggle)
                 {
-                    MWButtonToggle = 0;
+                    //main weapon button(Mouse L) is single shot mode
+                    MWBtnToggle = 0;
                 }
                 else
                 {
-                    MWButtonToggle = 1;
+                    //main weapon button(Mouse L) is rapid fire mode
+                    MWBtnToggle = 1;
                 }
-                printf("MWButtonToggle=%d\n", MWButtonToggle);
+                printf("MWBtnToggle=%d\n", MWBtnToggle);
             }
 
             Slow = KeyMap[KEY_LEFTSHIFT];
 
+            //debug
+            //Adjust mouse sensitivity
             if (KeyMap[KEY_F5])
             {
                 XSensitivity += 0.1f;
@@ -424,11 +399,11 @@ void* MouseThread(void *p)
         if (event.type == EV_KEY)
         {
             //printf("code=0x%04x value=0x%08x.\n", event.code, event.value);
-            //event.valueの値は、0=Off、1=On、2＝Repeat
+            //event.value is 0=Off, 1=On, 2=Repeat
 
             if (event.value == 2)
             {
-                //リピート時は何もしない
+                //do nothing
                 continue;
             }
 
@@ -486,66 +461,53 @@ void* MouseThread(void *p)
     return NULL;
 }
 
-unsigned char Spi6050[] = {
-    0xC5, 0x1A, 0x4A, 0x6C, 0xC0, 0x4A, 0xFF, 0xFF, 
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+unsigned short XValGet(unsigned char *pBuf)
+{
+    unsigned short ret;
 
-unsigned char Spi6080[] = { 
-    0x50, 0xFD, 0x00, 0x00, 0xC6, 0x0F, 0x0F, 0x30, 
-    0x61, 0x96, 0x30, 0xF3, 0xD4, 0x14, 0x54, 0x41, 
-    0x15, 0x54, 0xC7, 0x79, 0x9C, 0x33, 0x36, 0x63 };
+    ret = ((short)pBuf[1] & 0x0F) << 8;
+    ret |= (short)pBuf[0];
 
-unsigned char Spi6098[] = { 
-    0x0F, 0x30, 0x61, 0x96, 0x30, 0xF3, 0xD4, 0x14, 
-    0x54, 0x41, 0x15, 0x54, 0xC7, 0x79, 0x9C, 0x33,
-    0x36, 0x63 };
+    return ret;
+}
 
-unsigned char Spi603d[] = { 
-    0xD9, 0xF5, 0x63, 0x93, 0x67, 0x75, 0x26, 0x06, 
-    0x65, 0x8F, 0x17, 0x74, 0x63, 0x26, 0x65, 0xFC, 
-    0xE5, 0x64, 0xFF, 0x32, 0x32, 0x32, 0xFF, 0xFF, 
-    0xFF };
+unsigned short YValGet(unsigned char *pBuf)
+{
+    unsigned short ret;
 
-#if 0
-unsigned char Spi8026[] = {
-    0xB2, 0xA1, 0x0E, 0x01, 0xDA, 0xFF, 0xD2, 0x01, 
-    0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x09, 0x00, 
-    0xE6, 0xFF, 0xB4, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 
-    0x3B, 0x34 };
+    ret = (short)pBuf[1] >> 4;
+    ret |= (short)pBuf[2] << 4;
 
-unsigned char Spi8028[] = {
-    0x72, 0x00, 0xF1, 0xFF, 0xD2, 0x01, 0x00, 0x40, 
-    0x00, 0x40, 0x00, 0x40, 0xFF, 0xFF, 0xE9, 0xFF, 
-    0xB0, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 0x3B, 0x34 };
-#else
-unsigned char Spi8026[] = {
-    0xB2, 0xA1, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 
-    0x00, 0x40, 0x00, 0x40, 0x00, 0x40, 0x09, 0x00, 
-    0xE6, 0xFF, 0xB4, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 
-    0x3B, 0x34 };
+    return ret;
+}
 
-unsigned char Spi8028[] = {
-    0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x40, 
-    0x00, 0x40, 0x00, 0x40, 0xFF, 0xFF, 0xE9, 0xFF, 
-    0xB0, 0xFF, 0x3B, 0x34, 0x3B, 0x34, 0x3B, 0x34 };
+void XValSet(unsigned char *pBuf, unsigned short X)
+{
+    pBuf[0] = (unsigned char)(X & 0x00FF);
+    pBuf[1] &= 0xF0;
+    pBuf[1] |= (unsigned char)((X >> 8) & 0x000F);
+}
 
-#endif
-
+void YValSet(unsigned char *pBuf, unsigned short Y)
+{
+    pBuf[1] &= 0x0F;
+    pBuf[1] |= (unsigned char)((Y << 4) & 0x00F0);
+    pBuf[2] = (unsigned char)((Y >> 4) & 0x00FF);
+}
 
 void* OutputReportThread(void *p)
 {
     int ret;
     int len;
     int i;
-    unsigned int spiAddress;
+    unsigned int spiAddr;
+    unsigned char timStamp;
     unsigned char rd[MAX_PACKET_LEN];
     unsigned char wt[MAX_PACKET_LEN];
-    unsigned char timeStamp;
 
     printf("OutputReportThread start.\n");
 
-    timeStamp = 0;
-
+    timStamp = 0;
     while (Processing)
     {
         ret = ReadCheck(fGadget);
@@ -569,10 +531,12 @@ void* OutputReportThread(void *p)
 
         memset(wt, 0, sizeof(wt));
         len = 0;
-        timeStamp ++;
 
         switch (rd[0])
         {
+        case 0x00:
+            //do nothing
+            break;
         case 0x01:
             //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_subcommands_notes.md
 
@@ -580,33 +544,31 @@ void* OutputReportThread(void *p)
             {
                 //Subcommand 0x01: Bluetooth manual pairing
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x81;
-                wt[14] = 0x01;
-                wt[15] = 0x03;
+                wt[14] = rd[10];
+                wt[15] = 0x03;      //saves pairing info in Joy-Con
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x02)
             {
-                //gSubcommand 0x02: Request device info
-                timeStamp++;
+                //Subcommand 0x02: Request device info
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x82;
-                wt[14] = 0x02;
-                wt[15] = 0x03;
-                wt[16] = 0x48;
-                wt[17] = 0x03;
-                wt[18] = 0x02;
+                wt[14] = rd[10];
+                wt[15] = 0x03;      //firm ver 3.89
+                wt[16] = 0x48;      //firm ver 3.89
+                wt[17] = 0x03;      //Pro Controller
+                wt[18] = 0x02;      //always 0x02
+                //Gyro data must be encrypted for firmware version 4.00 and above
 
-                for (i = 0; i < sizeof(MacAddress); i++)
-                {
-                    wt[i + 19] = MacAddress[sizeof(MacAddress) - 1 - i];
-                }
-                wt[25] = 1;
-                wt[26] = 1;
+                //MAC address in Big Endian
+                memcpy(&wt[19], &pRomBuf[21], MAC_ADDRESS_LEN);
+                wt[25] = 0x01;      //always 0x01
+                wt[26] = 0x01;      //If 0x01, colors in SPI are used
 
                 len = MAX_PACKET_LEN;
             }
@@ -614,355 +576,157 @@ void* OutputReportThread(void *p)
             {
                 //Subcommand 0x03: Set input report mode
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x03;
+                wt[14] = rd[10];
+                wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x04)
             {
                 //Subcommand 0x04: Trigger buttons elapsed time
-                timeStamp++;
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x83;
-                wt[14] = 0x04;
+                wt[14] = rd[10];
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x06)
             {
                 //Subcommand 0x06: Set HCI state (disconnect/page/pair/turn off)
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x06;
+                wt[14] = rd[10];
+                wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x08)
             {
                 //Subcommand 0x08: Set shipment low power state
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x08;
+                wt[14] = rd[10];
+                wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x10)
             {
                 //Subcommand 0x10: SPI flash read
-                //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md
-                memcpy(&spiAddress, &rd[11], 4);
+                wt[0] = 0x21;
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
+                wt[13] = 0x90;      //subcommand reply
+                wt[14] = rd[10];    //subcommand reply
 
-                if (spiAddress == 0x6000)
-                {
-                    //Serial number in non-extended ASCII.
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x00;
-                    wt[16] = 0x60;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x10;
-                    memset(&wt[20], 0xFF, 16);
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x603d)
-                {
-                    //LFactory configuration & calibration 2
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x3d;
-                    wt[16] = 0x60;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x19;
+                memcpy(&spiAddr, &rd[11], 4);
+                memcpy(&wt[15], &spiAddr, sizeof(spiAddr));   //spi address
 
-                    memcpy(&wt[20], Spi603d, sizeof(Spi603d));
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x6050)
-                {
-                    //Body #RGB color, 24-bit
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x50;
-                    wt[16] = 0x60;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x0D;
-                    memcpy(&wt[20], Spi6050, sizeof(Spi6050));
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x6080)
-                {
-                    //Factory Sensor and Stick device parameters
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x80;
-                    wt[16] = 0x60;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x18;
-
-                    //6-Axis Horizontal
-                    memcpy(&wt[20], Spi6080, sizeof(Spi6080));
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x6098)
-                {
-                    //Factory Stick device parameters 2
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x98;
-                    wt[16] = 0x60;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x12;
-
-                    memcpy(&wt[20], Spi6098, sizeof(Spi6098));
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x8010)
-                {
-                    //user available calibration
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x10;
-                    wt[16] = 0x80;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = rd[15];
-
-                    //SPI address 0x8010, Magic 0xxB2 0xxA1 for user available calibration
-                    wt[20] = 0xB2;
-                    wt[21] = 0xA1;
-
-                    //SPI address 0x8012, Actual User Left Stick Calibration data
-                    XValSet(&wt[22], AXIS_MAX_INPUT - 1);
-                    XValSet(&wt[22], AXIS_MAX_INPUT - 1);
-                    XValSet(&wt[25], AXIS_CENTER);
-                    YValSet(&wt[25], AXIS_CENTER);
-                    XValSet(&wt[28], AXIS_MAX_INPUT);
-                    YValSet(&wt[28], AXIS_MAX_INPUT);
-
-                    //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
-                    wt[31] = 0xB2;
-                    wt[32] = 0xA1;
-
-                    //SPI address 0x801D, Actual user Right Stick Calibration data
-                    XValSet(&wt[33], AXIS_CENTER);
-                    YValSet(&wt[33], AXIS_CENTER);
-                    XValSet(&wt[36], AXIS_MAX_INPUT);
-                    YValSet(&wt[36], AXIS_MAX_INPUT);
-                    XValSet(&wt[39], AXIS_MAX_INPUT - 1);
-                    YValSet(&wt[39], AXIS_MAX_INPUT - 1);
-
-                    wt[42] = 0xB2;
-                    wt[43] = 0xA1;
-
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x801b)
-                {
-                    //Magic xB2 xA1 for user available calibration and Actual user Right Stick Calibration data
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x1b;
-                    wt[16] = 0x80;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = rd[15];
-
-                    //SPI address 0x801B, Magic 0xB2 0xA1 for user available calibration
-                    wt[20] = 0xB2;
-                    wt[21] = 0xA1;
-
-                    //SPI address 0x801D, Actual user Right Stick Calibration data
-                    XValSet(&wt[22], AXIS_CENTER);
-                    YValSet(&wt[22], AXIS_CENTER);
-                    XValSet(&wt[25], AXIS_MAX_INPUT);
-                    YValSet(&wt[25], AXIS_MAX_INPUT);
-                    XValSet(&wt[28], AXIS_MAX_INPUT - 1);
-                    YValSet(&wt[28], AXIS_MAX_INPUT - 1);
-
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x8026)
-                {
-                    //User 6-Axis Motion Sensor calibration
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x26;
-                    wt[16] = 0x80;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x1A;
-
-                    memcpy(&wt[20], Spi8026, sizeof(Spi8026));
-                    len = MAX_PACKET_LEN;
-                }
-                else if (spiAddress == 0x8028)
-                {
-                    //LFactory configuration & calibration 2
-                    wt[0] = 0x21;
-                    wt[1] = timeStamp;
-                    memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                    wt[13] = 0x90;
-                    wt[14] = 0x10;
-                    wt[15] = 0x28;
-                    wt[16] = 0x80;
-                    wt[17] = 0x00;
-                    wt[18] = 0x00;
-                    wt[19] = 0x18;
-
-                    memcpy(&wt[20], Spi8028, sizeof(Spi8028));
-                    len = MAX_PACKET_LEN;
-                }
-                else
-                {
-                    printf("spi read address=0x%04x\n", spiAddress);
-                }
+                wt[19] = rd[15];    //length
+                memcpy(&wt[20], &pRomBuf[spiAddr], wt[19]);
+                len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x11)
             {
                 //Subcommand 0x11: SPI flash Write
+                wt[0] = 0x21;
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
+                wt[13] = 0x80;      //subcommand reply
+                wt[14] = rd[10];    //subcommand reply
+                wt[15] = 0x00;      //success=0x00, write protect=0x01
+                len = MAX_PACKET_LEN;
 
-                memcpy(&spiAddress, &rd[11], 4);
+                //write data
+                memcpy(&spiAddr, &rd[11], 4);
+                memcpy(&pRomBuf[spiAddr], &rd[16], rd[15]);
+            }
+            else if (rd[10] == 0x12)
+            {
+                //Subcommand 0x12: SPI sector erase
+                wt[0] = 0x21;
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
+                wt[13] = 0x80;      //subcommand reply
+                wt[14] = rd[10];    //subcommand reply
+                wt[15] = 0x00;      //success=0x00, write protect=0x01
+                len = MAX_PACKET_LEN;
 
-                 if (spiAddress == 0x8010)
-                 {
-                     //default calibration L
-                     wt[0] = 0x21;
-                     wt[1] = timeStamp;
-                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                     wt[13] = 0x80;
-                     wt[14] = 0x11;
-                     len = MAX_PACKET_LEN;
-
-                     memset(&wt[31], 0xFF, 13);
-                 }
-                 else if (spiAddress == 0x801b)
-                 {
-                     //default calibration R
-                     wt[0] = 0x21;
-                     wt[1] = timeStamp;
-                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                     wt[13] = 0x80;
-                     wt[14] = 0x11;
-                     len = MAX_PACKET_LEN;
-
-                     memset(&wt[31], 0xFF, 13);
-
-                 }
-                 else if (spiAddress == 0x8026)
-                 {
-                     wt[0] = 0x21;
-                     wt[1] = timeStamp;
-                     memcpy(&wt[2], BakProconData, sizeof(BakProconData));
-                     wt[13] = 0x80;
-                     wt[14] = 0x11;
-                     len = MAX_PACKET_LEN;
-                 }
-                 else
-                 {
-                     printf("spi write addrss=0x%04x\n", spiAddress);
-                 }
+                //erase data
+                memcpy(&spiAddr, &rd[11], 4);
+                memset(&pRomBuf[spiAddr], 0xFF, rd[15]);
             }
             else if (rd[10] == 0x21)
             {
                 //Subcommand 0x21: Set NFC/IR MCU configuration
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x21;
+                wt[14] = rd[10];
                 wt[15] = rd[11];
-                
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x22)
             {
                 //Subcommand 0x22: Set NFC/IR MCU state
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x22;
-                wt[15] = rd[11];
-
+                wt[14] = rd[10];
+                wt[15] = 0x00;      //suspend=0x00, resume=0x01, resume for update=0x02
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x30)
             {
                 //Subcommand 0x30: Set player lights
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x30;
-                wt[15] = rd[11];
-
+                wt[14] = rd[10];
+                wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x40)
             {
                 //Subcommand 0x40: Enable IMU (6-Axis sensor)
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x40;
+                wt[14] = rd[10];
+                wt[15] = 0x00;
+                len = MAX_PACKET_LEN;
 
                 GyroEnable = 1;
-                len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x48)
             {
                 //Subcommand 0x48: Enable vibration
                 wt[0] = 0x21;
-                wt[1] = timeStamp;
-                memcpy(&wt[2], BakProconData, sizeof(BakProconData));
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
                 wt[13] = 0x80;
-                wt[14] = 0x48;
-
+                wt[14] = rd[10];
+                wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
             else
             {
+                //Add commands if needed
                 printf("Output Report=[0]:0x%02x [10]:0x%02x\n", rd[0], rd[10]);
             }
             break;
         case 0x10:
-            //unknown
-            continue;
+            //do noting
+            break;
         case 0x80:
             //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/USB-HID-Notes.md
 
@@ -970,45 +734,52 @@ void* OutputReportThread(void *p)
             {
                 //get mac address
                 wt[0] = 0x81;
-                wt[1] = 0x01;
+                wt[1] = rd[1];
+                wt[2] = 0x00;
                 wt[3] = 0x03;
-                memcpy(&wt[4], MacAddress, sizeof(MacAddress));
+
+                //FlashRom store MacAddress in reverse order.
+                for (i = 0; i < MAC_ADDRESS_LEN; i++)
+                {
+                    wt[4 + i] = pRomBuf[26 - i];
+                }
+
                 len = MAX_PACKET_LEN;
             }
             else if (rd[1] == 0x02)
             {
                 //hand shake
                 wt[0] = 0x81;
-                wt[1] = 0x02;
+                wt[1] = rd[1];
                 len = MAX_PACKET_LEN;
             }
             else if (rd[1] == 0x03)
             {
                 //baudrate to 3Mbit
                 wt[0] = 0x81;
-                wt[1] = 0x03;
+                wt[1] = rd[1];
                 len = MAX_PACKET_LEN;
             }
             else if (rd[1] == 0x04)
             {
                 //hid mode
                 HidMode = 1;
-
                 //no response
             }
             else if (rd[1] == 0x05)
             {
                 //bt mode
                 HidMode = 0;
-
                 //no response
             }
             else
             {
+                //Add commands if needed
                 printf("Output Report=[0]:0x%02x [1]:0x%02x\n", rd[0], rd[1]);
             }
             break;
         default:
+            //Add commands if needed
             printf("Output Report=[0]:0x%02x\n", rd[0]);
             break;
         }
@@ -1035,186 +806,197 @@ void* OutputReportThread(void *p)
 void StickInputL(unsigned char *pAxis, unsigned char Dir)
 {
     int stopping = 0;
-    
-    if((Dir == 0) && (MouseMap.Side == 1)) {
-        //Player is not pressing the L stick and Squid condition
-        if (DirPrevCnt <= MOVE_STOP_TIME) {
-            //停止まで方向入力を維持
-            DirPrevCnt ++;
-			Dir = DirPrev;
-            stopping = 1;
-		} else {
-            //動きを止める
-			DirPrevCnt = 0;
-			DirPrev = 0;
-		}
-	} else {
-		DirPrevCnt = 0;
-	}
 
-	if (Dir == 0x08)
-	{
-        //上
+    if ((Dir == 0) && (MouseMap.Side == 1))
+    {
+        //Player is not pressing the L stick and Squid condition
+        if (DirPrevCnt <= MOVE_STOP_TIME)
+        {
+            //停止まで方向入力を維持
+            DirPrevCnt++;
+            Dir = DirPrev;
+            stopping = 1;
+        }
+        else
+        {
+            //動きを止める
+            DirPrev = 0;
+            RollKeyTick = 0;
+        }
+    }
+    else if ((Dir) && (MouseMap.Side == 1))
+    {
+        //イカダッシュ中
+        DirPrevCnt = 0;
+        RollKeyTick++;
+    }
+
+    if (Slow)
+    {
+        //ゆっくりイカ移動
+        DirPrevCnt = 0;
+        RollKeyTick = 0;
+    }
+
+    if (Dir == STICK_DIR_UP)
+    {
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
             YValSet(pAxis, AXIS_CENTER + StraightHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER + (StraightHalf / 2));
             }
-            else{
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER + Straight);
-                RollKeyTick++;
             }
-
-            
         }
     }
-    else if (Dir == 0x0c)
+    else if (Dir == STICK_DIR_RIGHT_UP)
     {
-        //右上
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
             YValSet(pAxis, AXIS_CENTER + DiagonalHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER + (DiagonalHalf / 2));
                 YValSet(pAxis, AXIS_CENTER + (DiagonalHalf / 2));
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER + Diagonal);
                 YValSet(pAxis, AXIS_CENTER + Diagonal);
-                RollKeyTick++;
             }
         }
     }
-    else if (Dir == 0x04)
+    else if (Dir == STICK_DIR_RIGHT)
     {
-        //右
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + StraightHalf);
             YValSet(pAxis, AXIS_CENTER);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER + (StraightHalf / 2));
                 YValSet(pAxis, AXIS_CENTER);
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER + Straight);
                 YValSet(pAxis, AXIS_CENTER);
-                RollKeyTick++;
             }
         }
 
     }
-    else if (Dir == 0x06)
+    else if (Dir == STICK_DIR_RIGHT_DOWN)
     {
-        //右下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
             YValSet(pAxis, AXIS_CENTER - DiagonalHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER + (DiagonalHalf / 2));
                 YValSet(pAxis, AXIS_CENTER - (DiagonalHalf / 2));
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER + Diagonal);
                 YValSet(pAxis, AXIS_CENTER - Diagonal);
-                RollKeyTick++;
             }
         }
     }
-    else if (Dir == 0x02)
+    else if (Dir == STICK_DIR_DOWN)
     {
-        //下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
             YValSet(pAxis, AXIS_CENTER - StraightHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER - (StraightHalf / 2));
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER);
                 YValSet(pAxis, AXIS_CENTER - Straight);
-                RollKeyTick++;
             }
         }
     }
-    else if (Dir == 0x03)
+    else if (Dir == STICK_DIR_LEFT_DOWN)
     {
-        //左下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
             YValSet(pAxis, AXIS_CENTER - DiagonalHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER - (DiagonalHalf / 2));
                 YValSet(pAxis, AXIS_CENTER - (DiagonalHalf / 2));
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER - Diagonal);
                 YValSet(pAxis, AXIS_CENTER - Diagonal);
-                RollKeyTick++;
             }
         }
     }
-    else if (Dir == 0x01)
+    else if (Dir == STICK_DIR_LEFT)
     {
-        //左
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - StraightHalf);
             YValSet(pAxis, AXIS_CENTER);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER - (StraightHalf / 2));
                 YValSet(pAxis, AXIS_CENTER);
-            } else {
+            }
+            else
+            {
                 XValSet(pAxis, AXIS_CENTER - Straight);
                 YValSet(pAxis, AXIS_CENTER);
-                RollKeyTick++;
             }
         }
     }
-    else if (Dir == 0x09)
+    else if (Dir == STICK_DIR_LEFT_UP)
     {
-        //左上
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
             YValSet(pAxis, AXIS_CENTER + DiagonalHalf);
-			RollKeyTick = 0;
         }
         else
         {
-            if (stopping) {
+            if (stopping)
+            {
                 XValSet(pAxis, AXIS_CENTER - (DiagonalHalf / 2));
                 YValSet(pAxis, AXIS_CENTER + (DiagonalHalf / 2));
             }
@@ -1222,144 +1004,146 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
             {
                 XValSet(pAxis, AXIS_CENTER - Diagonal);
                 YValSet(pAxis, AXIS_CENTER + Diagonal);
-                RollKeyTick++;
             }
-		}
+        }
     }
     else
     {
-		//入力無し
+        //no input
         XValSet(pAxis, AXIS_CENTER);
         YValSet(pAxis, AXIS_CENTER);
-		RollKeyTick = 0;
     }
 
-#ifdef SQUID_ROLL_ENABLE	
-	if (MouseMap.Side == 0){
-		RollKeyTick = 0;
-	}
+#ifdef SQUID_ROLL_ENABLE
+    if (MouseMap.Side == 0)
+    {
+        RollKeyTick = 0;
+    }
 
-	if (KeyMap[KEY_SPACE] == 1){
-		RollKeyTick = 0;
-	}
+    if (KeyMap[KEY_SPACE] == 1)
+    {
+        RollKeyTick = 0;
+    }
 
-	if (MouseMap.L == 1){
-		RollKeyTick = 0;
-	}
+    if (MouseMap.L == 1)
+    {
+        RollKeyTick = 0;
+    }
 
-	if (MouseMap.R == 1){
-		RollKeyTick = 0;
-	}
+    if (MouseMap.R == 1)
+    {
+        RollKeyTick = 0;
+    }
 
-	if (MouseMap.Extra == 1) {
-		RollKeyTick = 0;
-	}
+    if (MouseMap.Extra == 1)
+    {
+        RollKeyTick = 0;
+    }
 
-	if (RollKeyTick >= ROLL_INPUT_TIME) 
-	{
+    if (RollKeyTick >= ROLL_INPUT_TIME)
+    {
         //printf("rool tick=%d\n", RollKeyTick);
 
         //イカロール方向を指定する
 
-        if (RollDirPrev == 0x08)
-		{
+        if (RollDirPrev == STICK_DIR_UP)
+        {
             //前
-            if ((Dir == 0x02) || (Dir == 0x03) || (Dir == 0x06))
-			{
+            if ((Dir == STICK_DIR_DOWN) || (Dir == STICK_DIR_LEFT_DOWN) || (Dir == STICK_DIR_RIGHT_DOWN))
+            {
                 //下、右下、左下、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x0c)
-		{
+        if (RollDirPrev == STICK_DIR_RIGHT_UP)
+        {
             //右上
-            if ((Dir == 0x01) || (Dir == 0x02) || (Dir == 0x03))
-			{
+            if ((Dir == STICK_DIR_LEFT) || (Dir == STICK_DIR_DOWN) || (Dir == STICK_DIR_LEFT_DOWN))
+            {
                 //左、下、左下、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x04)
-		{
+        if (RollDirPrev == STICK_DIR_RIGHT)
+        {
             //右
-            if ((Dir ==0x01) || (Dir == 0x03) || (Dir == 0x09))
-			{
+            if ((Dir == STICK_DIR_LEFT) || (Dir == STICK_DIR_LEFT_DOWN) || (Dir == STICK_DIR_LEFT_UP))
+            {
                 //左、左下、左上、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x06)
-		{
+        if (RollDirPrev == STICK_DIR_RIGHT_DOWN)
+        {
             //右下
-            if ((Dir == 0x01) || (Dir == 0x08) || (Dir == 0x09))
-			{
+            if ((Dir == STICK_DIR_LEFT) || (Dir == STICK_DIR_UP) || (Dir == STICK_DIR_LEFT_UP))
+            {
                 //左、上、右上、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x02)
-		{
+        if (RollDirPrev == STICK_DIR_DOWN)
+        {
             //下
-            if ((Dir == 0x08) || (Dir == 0x09) || (Dir == 0x0c))
-			{
+            if ((Dir == STICK_DIR_UP) || (Dir == STICK_DIR_LEFT_UP) || (Dir == STICK_DIR_RIGHT_UP))
+            {
                 //上、左上、右上、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x03)
-		{
+        if (RollDirPrev == STICK_DIR_LEFT_DOWN)
+        {
             //左下
-            if ((Dir == 0x04) || (Dir == 0x08) || (Dir == 0x0c))
-			{
+            if ((Dir == STICK_DIR_RIGHT) || (Dir == STICK_DIR_UP) || (Dir == STICK_DIR_RIGHT_UP))
+            {
                 //右、上、右上、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x01)
-		{
+        if (RollDirPrev == STICK_DIR_LEFT)
+        {
             //左
-            if ((Dir == 0x04) || (Dir == 0x06) || (Dir == 0x0c))
-			{
+            if ((Dir == STICK_DIR_RIGHT) || (Dir == STICK_DIR_RIGHT_DOWN) || (Dir == STICK_DIR_RIGHT_UP))
+            {
                 //右、右下、右上、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
+                RollTick = 0;
+            }
+        }
 
-		if (RollDirPrev == 0x09)
-		{
+        if (RollDirPrev == STICK_DIR_LEFT_UP)
+        {
             //左上
-            if ((Dir == 0x02) || (Dir == 0x04) || (Dir == 0x06))
-			{
+            if ((Dir == STICK_DIR_DOWN) || (Dir == STICK_DIR_RIGHT) || (Dir == STICK_DIR_RIGHT_DOWN))
+            {
                 //下、右、右下、イカロール
                 RollOn = 1;
-				RollTick = 0;
-			}
-		}
-	}
+                RollTick = 0;
+            }
+        }
+    }
 #endif
 
-	RollDirPrev = Dir;
+    RollDirPrev = Dir;
     DirPrev = Dir;
 }
 
 void StickInputR(unsigned char *pAxis, unsigned char Dir)
 {
-    if (Dir == 0x08)
+    if (Dir == STICK_DIR_UP)
     {
-        //上
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
@@ -1371,9 +1155,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER + Straight);
         }
     }
-    else if (Dir == 0x0c)
+    else if (Dir == STICK_DIR_RIGHT_UP)
     {
-        //右上
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
@@ -1385,9 +1168,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER + Diagonal);
         }
     }
-    else if (Dir == 0x04)
+    else if (Dir == STICK_DIR_RIGHT)
     {
-        //右
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + StraightHalf);
@@ -1400,9 +1182,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
         }
 
     }
-    else if (Dir == 0x06)
+    else if (Dir == STICK_DIR_RIGHT_DOWN)
     {
-        //右下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER + DiagonalHalf);
@@ -1414,9 +1195,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER - Diagonal);
         }
     }
-    else if (Dir == 0x02)
+    else if (Dir == STICK_DIR_DOWN)
     {
-        //下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER);
@@ -1428,9 +1208,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER - Straight);
         }
     }
-    else if (Dir == 0x03)
+    else if (Dir == STICK_DIR_LEFT_DOWN)
     {
-        //左下
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
@@ -1442,9 +1221,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER - Diagonal);
         }
     }
-    else if (Dir == 0x01)
+    else if (Dir == STICK_DIR_LEFT)
     {
-        //左
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - StraightHalf);
@@ -1456,9 +1234,8 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
             YValSet(pAxis, AXIS_CENTER);
         }
     }
-    else if (Dir == 0x09)
+    else if (Dir == STICK_DIR_LEFT_UP)
     {
-        //左上
         if (Slow)
         {
             XValSet(pAxis, AXIS_CENTER - DiagonalHalf);
@@ -1468,11 +1245,11 @@ void StickInputR(unsigned char *pAxis, unsigned char Dir)
         {
             XValSet(pAxis, AXIS_CENTER - Diagonal);
             YValSet(pAxis, AXIS_CENTER + Diagonal);
-		}
+        }
     }
     else
     {
-        //入力無し
+        //no input
         XValSet(pAxis, AXIS_CENTER);
         YValSet(pAxis, AXIS_CENTER);
     }
@@ -1484,149 +1261,108 @@ void GyroEmurate(ProconData *pPad)
 
     memset(&gyro, 0, sizeof(gyro));
 
-    //X角度、Z角度変化しない
+    //Z Angle do not change.
     gyro.Z_Angle = 4096;
 
-    //Y角度合算
+    //Add Y Angle
     YTotal += (int32_t)((float)MouseMap.Y * YFollowing * -1);
 
     if (YTotal > Y_ANGLE_UPPPER_LIMIT)
     {
-        //これ以上進まないようにする
+        //upper limit
         YTotal = Y_ANGLE_UPPPER_LIMIT;
     }
 
     if (YTotal < Y_ANGLE_LOWER_LIMIT)
     {
-        //これ以上進まないようにする
+        //lower limit
         YTotal = Y_ANGLE_LOWER_LIMIT;
     }
 
     gyro.Y_Angle = YTotal;
     //printf("YTotal=%d\n", YTotal);
 
-    //上下
-    if ((gyro.Y_Angle != Y_ANGLE_UPPPER_LIMIT) && (gyro.Y_Angle != Y_ANGLE_LOWER_LIMIT)) 
+    //Up,down
+    if ((gyro.Y_Angle != Y_ANGLE_UPPPER_LIMIT) && (gyro.Y_Angle != Y_ANGLE_LOWER_LIMIT))
     {
         gyro.Y_Accel = (short)((float)MouseMap.Y * YSensitivity);
     }
-    
+
     gyro.Z_Accel = (short)((float)MouseMap.X * XSensitivity);
-    
-    //加速方向がマウスと逆なので逆転させる
     gyro.Z_Accel *= -1;
 
-	if (gyro.Z_Accel < -16000) {
-		gyro.Z_Accel = - 16000;
-	}
+    if (gyro.Z_Accel < Y_ACCEL_LOWER_LIMIT)
+    {
+        //lower limit
+        gyro.Z_Accel = -Y_ACCEL_LOWER_LIMIT;
+    }
 
-	if (gyro.Z_Accel > 16000) {
-		gyro.Z_Accel = 16000;
-	}
+    if (gyro.Z_Accel > Y_ACCEL_UPPPER_LIMIT)
+    {
+        //upper limmit
+        gyro.Z_Accel = Y_ACCEL_UPPPER_LIMIT;
+    }
 
     //ジャイロデータは3サンプル分（1サンプル5ms）のデータを格納する
     //コンバータでは同じデータを3つ格納する
-    
+
     memcpy(&pPad->GyroData[0], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[12], &gyro, sizeof(gyro));
     memcpy(&pPad->GyroData[24], &gyro, sizeof(gyro));
-        
+
     //マウスは変化があった場合にデータが来る、よってXYに値が残っている
     MouseMap.X = 0;
     MouseMap.Y = 0;
-    
 }
 
-/*
-マクロサンプル
-スタート地点へスーパージャンプする
-ProconInputの呼び出し間隔は15msなのでProconInput内で呼ぶReturnToBaseMacroも 
-15ms間隔で呼ばれることになる 
-*/
+//super jump
 void ReturnToBaseMacro(ProconData *pPad)
 {
     if (ReturnToBase)
     {
+        pPad->R = 0;
+        pPad->L = 0;
+        pPad->ZL = 0;
+        pPad->ZR = 0;
+
+        pPad->A = 0;
+        pPad->B = 0;
+        pPad->X = 0;
+        pPad->Y = 0;
+
+        pPad->Up = 0;
+        pPad->Down = 0;
+        pPad->Left = 0;
+        pPad->Right = 0;
+
         switch (ReturnToBaseCnt)
         {
         case 0:
         case 1:
         case 2:
-            pPad->R = 0;
-            pPad->L = 0;
-            pPad->ZL = 0;
-            pPad->ZR = 0;
-
-            pPad->A = 0;
-            pPad->B = 0;
             pPad->X = 1;
-            pPad->Y = 0;
-
-            pPad->Up = 0;
-            pPad->Down = 0;
-            pPad->Left = 0;
-            pPad->Right = 0;
-
             ReturnToBaseCnt++;
             break;
         case 3:
         case 4:
         case 5:
-            pPad->R = 0;
-            pPad->L = 0;
-            pPad->ZL = 0;
-            pPad->ZR = 0;
-
-            pPad->A = 0;
-            pPad->B = 0;
             pPad->X = 1;
-            pPad->Y = 0;
-
-            pPad->Up = 0;
             pPad->Down = 1;
-            pPad->Left = 0;
-            pPad->Right = 0;
-
             ReturnToBaseCnt++;
             break;
         case 6:
         case 7:
         case 8:
-            pPad->R = 0;
-            pPad->L = 0;
-            pPad->ZL = 0;
-            pPad->ZR = 0;
-
             pPad->A = 1;
-            pPad->B = 0;
             pPad->X = 1;
-            pPad->Y = 0;
-
-            pPad->Up = 0;
             pPad->Down = 1;
-            pPad->Left = 0;
-            pPad->Right = 0;
-
             ReturnToBaseCnt++;
             break;
         case 9:
         case 10:
         case 11:
-            pPad->R = 0;
-            pPad->L = 0;
-            pPad->ZL = 0;
-            pPad->ZR = 0;
-
             pPad->A = 1;
-            pPad->B = 0;
             pPad->X = 1;
-            pPad->Y = 0;
-
-            pPad->Up = 0;
-            pPad->Down = 0;
-            pPad->Left = 0;
-            pPad->Right = 0;
-
             ReturnToBaseCnt++;
             break;
         default:
@@ -1640,83 +1376,46 @@ void ReturnToBaseMacro(ProconData *pPad)
 #ifdef INERTIA_CANCEL_ENABLE
 void InertiaCancel(ProconData *pPad)
 {
-	switch (InertiaCancelCnt)
-	{
-	case 0:
-	case 1:
-		pPad->R = 1;
-		InertiaCancelCnt++;
-		break;
-	case 2:
-	case 3:
-	case 4:
-	case 5:
-	case 6:
-		pPad->R = 1;
-		pPad->ZL = 1;
-		InertiaCancelCnt++;
-		break;
-	default:
-		pPad->ZL = 1;
-	}
+    switch (InertiaCancelCnt)
+    {
+    case 0:
+    case 1:
+        pPad->R = 1;
+        InertiaCancelCnt++;
+        break;
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+    case 6:
+        pPad->R = 1;
+        pPad->ZL = 1;
+        InertiaCancelCnt++;
+        break;
+    default:
+        pPad->ZL = 1;
+    }
 }
 #endif
 
 void DoSquidRoll(ProconData *pPad)
 {
-	if (RollOn == 0)
-	{
-		return;
-	}
-
-	if (RollTick < ROLL_JUMP_TIME) {
-        //イカロールのジャンプ入力
-        pPad->B = 1;
-		RollTick ++;
-	} 
-	else 
-	{
-		RollOn = 0;
-		RollTick = 0;
-        RollKeyTick = 0;
-	}
-}
-
-void YHoldMacro(ProconData *pPad)
-{
-    if (YHold == 0)
+    if (RollOn == 0)
     {
         return;
     }
+
+    if (RollTick < ROLL_JUMP_TIME)
+    {
+        //イカロールのジャンプ入力
+        pPad->B = 1;
+        RollTick++;
+    }
     else
     {
-        if (YHoldCnt < Y_HOLD_TIME1)
-        {
-            pPad->Y = 0;
-            YHoldCnt ++;
-        }
-        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2))
-        {
-            pPad->Y = 1;
-            YTotal = 0;
-            YHoldCnt ++;
-        }
-        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2 + Y_HOLD_TIME3))
-        {
-            pPad->Y = 0;
-            YTotal = 0;
-            YHoldCnt ++;
-        }
-        else if (YHoldCnt < (Y_HOLD_TIME1 + Y_HOLD_TIME2 + Y_HOLD_TIME3 + Y_HOLD_TIME4))
-        {
-            pPad->Y = 1;
-            YTotal = 0;
-            YHoldCnt ++;
-        }
-        else
-        {
-            pPad->Y = 1;
-        }
+        RollOn = 0;
+        RollTick = 0;
+        RollKeyTick = 0;
     }
 }
 
@@ -1724,8 +1423,8 @@ void ProconInput(ProconData *pPad)
 {
     unsigned char dir;
 
-	//通常利用の範囲では桁あふれしない
-	InputTick ++;
+    //通常利用の範囲では桁あふれしない
+    InputTick++;
 
     //常にON
     pPad->Grip = 1;
@@ -1736,9 +1435,6 @@ void ProconInput(ProconData *pPad)
         //視点リセット
         pPad->Y = 1;
         YTotal = 0;
-
-        //Y hold mode disable
-        YHold = 0;
     }
 
     if (KeyMap[KEY_2] == 1)
@@ -1794,17 +1490,8 @@ void ProconInput(ProconData *pPad)
     {
         //ジャンプ
         pPad->B = 1;
-		JumpTick = InputTick;
+        JumpTick = InputTick;
     }
-
-#ifdef SIDE_WALK_ENABLE
-    if (KeyMap[KEY_Q] == 1)
-    {
-        YHold = 1;
-        YHoldCnt = 0;
-    }
-    YHoldMacro(pPad);
-#endif
 
     if (KeyMap[KEY_T] == 1)
     {
@@ -1836,7 +1523,7 @@ void ProconInput(ProconData *pPad)
         pPad->StickL = 1;
     }
 
-    if (KeyMap[KEY_O] == 1)
+    if (KeyMap[KEY_I] == 1)
     {
         //R Stick
         pPad->StickR = 1;
@@ -1873,32 +1560,23 @@ void ProconInput(ProconData *pPad)
     //printf("StickL X=%d, Y=%d\n", XValGet(pPad->L_Axis), YValGet(pPad->L_Axis));
     //printf("StickR X=%d, Y=%d\n", XValGet(pPad->R_Axis), YValGet(pPad->R_Axis));
 
-    //左スティック
+    //L Stick assert WASD
     dir = KeyMap[KEY_W] << 3;
-	dir |= KeyMap[KEY_D] << 2;
+    dir |= KeyMap[KEY_D] << 2;
     dir |= KeyMap[KEY_S] << 1;
     dir |= KeyMap[KEY_A];
 
-    /*
-    up = 0x08
-    up right = 0x0c
-    right = 0x04 
-    right down = 0x06 
-    down = 0x02 
-    left down = 0x03 
-    left = 0x01 
-    up left = 0x09 
-    */ 
-	StickInputL(pPad->L_Axis, dir);
+    StickInputL(pPad->L_Axis, dir);
 #ifdef SQUID_ROLL_ENABLE
-	DoSquidRoll(pPad);
+    DoSquidRoll(pPad);
 #endif
 
-    //右スティック
+    //R Stick assert arrow UP,DOWN,LEFT,RIGHT
     dir = KeyMap[KEY_UP] << 3;
     dir |= KeyMap[KEY_RIGHT] << 2;
     dir |= KeyMap[KEY_DOWN] << 1;
     dir |= KeyMap[KEY_LEFT];
+
     StickInputR(pPad->R_Axis, dir);
 
     //printf("StickL X=%d, Y=%d\n", XValGet(pPad->L_Axis), YValGet(pPad->L_Axis));
@@ -1916,13 +1594,13 @@ void ProconInput(ProconData *pPad)
     {
         //サブ
         pPad->R = 1;
-		SubWpTick = InputTick;
+        SubWpTick = InputTick;
     }
 
     if (MouseMap.L)
     {
 
-        if (MWButtonToggle == 0)
+        if (MWBtnToggle == 0)
         {
             //メイン単発
             pPad->ZR = 1;
@@ -1930,59 +1608,60 @@ void ProconInput(ProconData *pPad)
         else
         {
             //メイン連射
-            if (RappidFire != 0)
+            if (RapidFire != 0)
             {
                 pPad->ZR = 1;
-                RappidFire = 0;
+                RapidFire = 0;
             }
             else
             {
-                RappidFire = 1;
+                RapidFire = 1;
             }
         }
 
-		MainWpTick = InputTick;
+        MainWpTick = InputTick;
     }
 
 #ifdef INERTIA_CANCEL_ENABLE
-	if (MouseMap.Side)
+    if (MouseMap.Side)
     {
-		if (((JumpTick + DELEY_FOR_AFTER_JUMP) < InputTick) && 
-			((MainWpTick + DELEY_FOR_AFTER_MAIN_WP) < InputTick) &&
-			((SubWpTick + DELEY_FOR_AFTER_SUB_WP) < InputTick)){
-			InertiaCancel(pPad);
-		}
-		else
-		{
-			//ジャンプ、メイン、サブ実施後は慣性キャンセル無しでイカになる
-			pPad->ZL = 1;
-			InertiaCancelCnt = 0xFF;
-		}
-	}
-	else
-	{
-		InertiaCancelCnt = 0;
-	}
+        if (((JumpTick + DELEY_FOR_AFTER_JUMP) < InputTick) &&
+            ((MainWpTick + DELEY_FOR_AFTER_MAIN_WP) < InputTick) &&
+            ((SubWpTick + DELEY_FOR_AFTER_SUB_WP) < InputTick))
+        {
+            InertiaCancel(pPad);
+        }
+        else
+        {
+            //ジャンプ、メイン、サブ実施後は慣性キャンセル無しでイカになる
+            pPad->ZL = 1;
+            InertiaCancelCnt = 0xFF;
+        }
+    }
+    else
+    {
+        InertiaCancelCnt = 0;
+    }
 #else
-	if (MouseMap.Side)
+    if (MouseMap.Side)
     {
-		pPad->ZL = 1;
-	}
+        pPad->ZL = 1;
+    }
 #endif
 
     if (MouseMap.Extra)
     {
-        if (MWButtonToggle == 0)
+        if (MWBtnToggle == 0)
         {
             //メイン連射
-            if (RappidFire != 0)
+            if (RapidFire != 0)
             {
                 pPad->ZR = 1;
-                RappidFire = 0;
+                RapidFire = 0;
             }
             else
             {
-                RappidFire = 1;
+                RapidFire = 1;
             }
         }
         else
@@ -2013,31 +1692,34 @@ void ProconInput(ProconData *pPad)
 void* InputReportThread(void *p)
 {
     int ret;
-    unsigned char timeStamp;
-    ProconData procon;
     unsigned char *ptr;
+    ProconData procon;
+    unsigned char timStamp;
+    struct timespec wait;
 
     printf("InputReportThread start.\n");
 
-    timeStamp = 0;
+    timStamp = 0;
+    wait.tv_sec = 0;
+    wait.tv_nsec = PAD_INPUT_WAIT * 1000000;
+
     while (Processing)
     {
-        //wait 16ms
-        usleep(PAD_INPUT_WAIT * 1000);
+        nanosleep(&wait, NULL);
 
         if (HidMode)
         {
             memset(&procon, 0, sizeof(procon));
-            timeStamp += (PAD_INPUT_WAIT / 8);
+            timStamp += (PAD_INPUT_WAIT / 8);
 
             procon.ReportId = 0x30;
-            procon.TimeStamp = timeStamp;
+            procon.TimeStamp = timStamp;
             procon.ConnectNo = 1;
             procon.BatteryLevel = 9;
             ProconInput(&procon);
 
             ptr = (unsigned char *)&procon;
-            memcpy(BakProconData, &ptr[2], sizeof(BakProconData));
+            memcpy(BakupProconData, &ptr[2], sizeof(BakupProconData));
 
             pthread_mutex_lock(&UsbMtx);
             ret = write(fGadget, &procon, sizeof(procon));
@@ -2117,18 +1799,12 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
 int main(int argc, char *argv[])
 {
     int ret;
+    int fd;
+    struct stat fst;
     char devName[MAX_NAME_LEN];
 
     printf("Procon Converter start.\n");
 
-    /*
-    初期値
-    マウス操作は画面に対して、横がX、縦がYとする
-    Proconのジャイロとは座標軸が異なるので注意すること
-    Proconの座標は平置きして上から見たときに
-    https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/imu_sensor_notes.md
-    のLeft Jyo-Con図と合わせてある
-    */
     XSensitivity = X_SENSITIVITY;
     YSensitivity = Y_SENSITIVITY;
     YFollowing = Y_FOLLOWING;
@@ -2144,15 +1820,50 @@ int main(int argc, char *argv[])
 
     HidMode = 0;
     GyroEnable = 0;
-    memset(BakProconData, 0, sizeof(BakProconData));
+    memset(BakupProconData, 0, sizeof(BakupProconData));
 
     pthread_mutex_init(&MouseMtx, NULL);
     pthread_mutex_init(&UsbMtx, NULL);
 
+    if (stat(ROM_FILE_NAME, &fst) < 0)
+    {
+        printf("%s not found.\n", ROM_FILE_NAME);
+        Processing = 0;
+        goto EXIT;
+    }
+    RomSize = fst.st_size;
+
+    pRomBuf = malloc(RomSize);
+    if (pRomBuf == NULL)
+    {
+        printf("malloc error.\n");
+        Processing = 0;
+        goto EXIT;
+    }
+
+    fd = open(ROM_FILE_NAME, O_RDONLY);
+    if (fd < 0)
+    {
+        printf("open error.\n");
+        Processing = 0;
+        goto EXIT;
+    }
+
+    //https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md
+    if (read(fd, pRomBuf, (size_t)RomSize) <= 0)
+    {
+        printf("read error.\n");
+        close(fd);
+        Processing = 0;
+        goto EXIT;
+    }
+
+    close(fd);
+
     ret = InputDevNameGet(DEV_KEYBOARD, KEYBOARD_NAME, devName);
     if (ret == -1)
     {
-        printf("Keybord is not found.\n");
+        printf("Keybord not found.\n");
         Processing = 0;
         goto EXIT;
     }
@@ -2168,7 +1879,7 @@ int main(int argc, char *argv[])
     ret = InputDevNameGet(DEV_MOUSE, MOUSE_NAME, devName);
     if (ret == -1)
     {
-        printf("Mouse is not found.\n");
+        printf("Mouse not found.\n");
         Processing = 0;
         goto EXIT;
     }
@@ -2230,6 +1941,7 @@ int main(int argc, char *argv[])
     thMouseCreated = 1;
 
 EXIT:
+
     if (thKeyboardCreated)
     {
         pthread_join(thKeyboard, NULL);
@@ -2263,6 +1975,11 @@ EXIT:
     if (fGadget != -1)
     {
         close(fGadget);
+    }
+
+    if (pRomBuf)
+    {
+        free(pRomBuf);
     }
 
     pthread_mutex_destroy(&MouseMtx);
