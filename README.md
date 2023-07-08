@@ -13,11 +13,13 @@
 Ver 0.09 2022/11/25  
 旧バージョン、動作にはプロコンが必要です。  
   
-Ver 0.16 2023/05/06    
-マウスを上下に強く動かすと座標が変になる不具合を修正。  
-横歩きモードを追加しました。（Qキーで有効、１キーで無効）  
-横歩きモードは実験的な実装です。 出撃ごとにQキーでセンタリングが必要です。  
-#define SIDE_WALK_ENABLEをコメントアウトすれば無効になります。  
+Ver 0.17 2023/07/08    
+横歩きモードは削除しました。
+ソースコードをすこし整理しました。
+コントローラーデータをファイルから読み込むようにしました。
+キー配置変更しました。変更したキーはQ(discon),G,H,U,I,Lです。
+機能自体はVer 0.16から変更ありません。  
+**proconcon.outと同じ場所にflashrom.binを配置してください。** 
     
 ## 必要な物
 ラズベリーパイ 4B     
@@ -46,6 +48,9 @@ gcc proconcon.c -o proconcon.out -l pthread -lm -O3 -Wall
 ## 起動方法
 sudo ./load_procon.sh  
 sudo ./proconcon.out  
+
+**proconcon.outと同じ場所にflashrom.binを配置してください。**  
+**flashrom.binはコントローラーの設定ファイルで、proconcon.out起動時に利用します。** 
   
 マウス感度は800-1600 DPIをあたりで調整すると良さそうです。  
 本プログラムはCUI(CLI)で利用してください。  
@@ -71,16 +76,17 @@ sudo ./proconcon.out
 | WASD          | Stick L       |                                                   | 
 | SHIFT L       |               | Move slowly with SHIFT L + WASD                   | 
 | SPACE         | B             |                                                   |
-| Q             |               | Centering + walking sideways                      | 
 | E             | A             |                                                   | 
 | R             | X             |                                                   | 
 | F             | Hat Up        |                                                   | 
 | C             | Hat Down      |                                                   | 
 | T             | L             |                                                   | 
 | Y             | R             |                                                   | 
-| H             | ZL            | Added in ver 0.16                                 | 
-| J             | ZR            | Added in ver 0.16                                 | 
+| G             | ZL            | Added in ver 0.16                                 | 
+| H             | ZR            | Added in ver 0.16                                 | 
 | U             | Stick L Push  |                                                   | 
+| I             | Stick R Push  |                                                   | 
+| L             |               | Tesla menu open                                   | 
 | Z             |               | Super jump to starting point                     | 
 | Num2          | Hat Down      |                                                   | 
 | Num4          | Hat Left      |                                                   | 
