@@ -23,6 +23,7 @@ ver 0.14 2023/01/08 マウスを左右に振った時の追従性を向上
 ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で自動でイカロールする 
 ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる不具合を修正、センターリングホールドモードを追加  
 ver 0.17 2023/07/08 冗長なソースコードを整理しました。センターリングホールドモードは使いにくいので削除した 
+ver 0.18 2023/10/17 SHIFTキーを押している間、ゆっくり動作が中断されない不具合を修正した 
 */ 
 
 #include <stdio.h>
@@ -41,6 +42,9 @@ ver 0.17 2023/07/08 冗長なソースコードを整理しました。センタ
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+
+//debug
+#define ENUM_HID_DEVICE         //list up hid input device
 
 /*
 スプラトゥーンでは、左右はジャイロの加速度で判断する
@@ -117,8 +121,9 @@ usb-SIGMACHIP_USB_Keyboard-event-if01
 usb-SIGMACHIP_USB_Keyboard-event-kbd
 usb-Topre_Corporation_Realforce_108-event-kbd 
 */
-#define KEYBOARD_NAME       "Topre_Corporation_Realforce_108"
+//#define KEYBOARD_NAME       "Topre_Corporation_Realforce_108"
 //#define KEYBOARD_NAME       "usb-SIGMACHIP_USB_Keyboard"
+#define KEYBOARD_NAME     "usb-SINO_WEALTH_Gaming_KB"
 
 //#define MOUSE_NAME          "Logitech_G403_Prodigy_Gaming_Mouse"
 #define MOUSE_NAME          "usb-Logitech_G403_HERO_Gaming_Mouse"
@@ -834,7 +839,7 @@ void StickInputL(unsigned char *pAxis, unsigned char Dir)
     if (Slow)
     {
         //ゆっくりイカ移動
-        DirPrevCnt = 0;
+        DirPrevCnt = MOVE_STOP_TIME + 1;
         RollKeyTick = 0;
     }
 
@@ -1388,6 +1393,7 @@ void InertiaCancel(ProconData *pPad)
     case 4:
     case 5:
     case 6:
+    case 7:
         pPad->R = 1;
         pPad->ZL = 1;
         InertiaCancelCnt++;
@@ -1547,12 +1553,12 @@ void ProconInput(ProconData *pPad)
         pPad->Down = 1;
     }
 
-    if (KeyMap[KEY_KP4] == 1)
+    if ((KeyMap[KEY_KP4] == 1) || (KeyMap[KEY_COMMA] == 1))
     {
         pPad->Left = 1;
     }
 
-    if (KeyMap[KEY_KP6] == 1)
+    if ((KeyMap[KEY_KP6] == 1) || (KeyMap[KEY_DOT] == 1))
     {
         pPad->Right = 1;
     }
@@ -1629,6 +1635,7 @@ void ProconInput(ProconData *pPad)
             ((MainWpTick + DELEY_FOR_AFTER_MAIN_WP) < InputTick) &&
             ((SubWpTick + DELEY_FOR_AFTER_SUB_WP) < InputTick))
         {
+            RollOn = 0;
             InertiaCancel(pPad);
         }
         else
@@ -1762,6 +1769,9 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
             p = strstr(dp->d_name, "event-kbd");
             if (p != NULL)
             {
+#ifdef ENUM_HID_DEVICE
+                printf("enum keyboard:%s\n", dp->d_name);
+#endif
                 p = strstr(dp->d_name, pSearchName);
                 if (p != NULL)
                 {
@@ -1778,6 +1788,9 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
             p = strstr(dp->d_name, "event-mouse");
             if (p != NULL)
             {
+#ifdef ENUM_HID_DEVICE
+                printf("enum mouse:%s\n", dp->d_name);
+#endif
                 p = strstr(dp->d_name, pSearchName);
                 if (p != NULL)
                 {
