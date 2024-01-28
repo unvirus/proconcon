@@ -24,6 +24,7 @@ ver 0.15 2023/02/12 自動イカロール機能を追加、反対方向入力で
 ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる不具合を修正、センターリングホールドモードを追加  
 ver 0.17 2023/07/08 冗長なソースコードを整理しました。センターリングホールドモードは使いにくいので削除した 
 ver 0.18 2023/10/17 SHIFTキーを押している間、ゆっくり動作が中断されない不具合を修正した 
+ver 0.19 2024/01/28 操作中にターミナルで余計な文字が出ないようにした、64BitOSで動作確認した 
 */ 
 
 #include <stdio.h>
@@ -42,6 +43,7 @@ ver 0.18 2023/10/17 SHIFTキーを押している間、ゆっくり動作が中�
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <termios.h>
 
 //debug
 #define ENUM_HID_DEVICE         //list up hid input device
@@ -699,6 +701,17 @@ void* OutputReportThread(void *p)
                 wt[15] = 0x00;
                 len = MAX_PACKET_LEN;
             }
+            else if (rd[10] == 0x33)
+            {
+                //https://greggman.github.io/html5-gamepad-test/
+                wt[0] = 0x21;
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
+                wt[13] = 0x80;
+                wt[14] = rd[10];
+                wt[15] = 0x03;
+                len = MAX_PACKET_LEN;
+            }
             else if (rd[10] == 0x40)
             {
                 //Subcommand 0x40: Enable IMU (6-Axis sensor)
@@ -711,6 +724,17 @@ void* OutputReportThread(void *p)
                 len = MAX_PACKET_LEN;
 
                 GyroEnable = 1;
+            }
+            else if (rd[10] == 0x41)
+            {
+                //https://greggman.github.io/html5-gamepad-test/
+                wt[0] = 0x21;
+                wt[1] = timStamp++;
+                memcpy(&wt[2], BakupProconData, sizeof(BakupProconData));
+                wt[13] = 0x80;
+                wt[14] = rd[10];
+                wt[15] = 0x00;
+                len = MAX_PACKET_LEN;
             }
             else if (rd[10] == 0x48)
             {
@@ -1809,6 +1833,15 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
     return found;
 }
 
+void EchoOff(void)
+{
+    struct termios term;
+
+    tcgetattr(STDIN_FILENO, &term);
+    term.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &term);
+}
+
 int main(int argc, char *argv[])
 {
     int ret;
@@ -1834,6 +1867,8 @@ int main(int argc, char *argv[])
     HidMode = 0;
     GyroEnable = 0;
     memset(BakupProconData, 0, sizeof(BakupProconData));
+
+    EchoOff();
 
     pthread_mutex_init(&MouseMtx, NULL);
     pthread_mutex_init(&UsbMtx, NULL);
