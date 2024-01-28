@@ -65,7 +65,7 @@ sudo ./proconcon.out
 | Key           | ProCon        | Comment                                           |  
 | ------------- | ------------- | ------------------------------------------------- |  
 | ESC           | Home          |                                                   |
-| 1             | Y             | Centering + stop walking sideways                 |  
+| 1             | Y             | Centering                                          |  
 | 2             | Capture       |                                                   |  
 | 3             | -             |                                                   |  
 | 4             | +             |                                                   | 
@@ -84,7 +84,7 @@ sudo ./proconcon.out
 | U             | Stick L Push  |                                                   | 
 | I             | Stick R Push  |                                                   | 
 | L             |               | Tesla menu open                                   | 
-| Z             |               | Super jump to starting point                     | 
+| Z             |               | Super jump to respawn point                     | 
 | Num2          | Hat Down      |                                                   | 
 | Num4          | Hat Left      |                                                   | 
 | Num6          | Hat Right     |                                                   | 
@@ -99,7 +99,7 @@ sudo ./proconcon.out
 | Mouse R       | R             |                                                   | 
 | Mouse L       | ZR            |                                                   | 
 | Mouse Side    | ZL            |                                                   | 
-| Mouse Extra   | ZR            | Rappid Fire                                       | 
+| Mouse Extra   | ZR            | Rapid Fire                                       | 
 | Mouse Wheel   | Stick R Push  |                                                   | 
 | Mouse Middle  | Stick R Push  |                                                   | 
 | Mouse move    | Gyro          |                                                   | 
