@@ -25,6 +25,7 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 ver 0.17 2023/07/08 冗長なソースコードを整理しました。センターリングホールドモードは使いにくいので削除した 
 ver 0.18 2023/10/17 SHIFTキーを押している間、ゆっくり動作が中断されない不具合を修正した 
 ver 0.19 2024/01/28 操作中にターミナルで余計な文字が出ないようにした、64BitOSで動作確認した 
+ver 0.20 2024/02/03 プログラムの終了処理を調整した      
 */ 
 
 #include <stdio.h>
@@ -1833,13 +1834,27 @@ int InputDevNameGet(int DevType, char *pSearchName, char *pDevName)
     return found;
 }
 
-void EchoOff(void)
+void Echo(int enable)
 {
     struct termios term;
 
     tcgetattr(STDIN_FILENO, &term);
-    term.c_lflag &= ~ECHO;
+
+    if (enable)
+    {
+        term.c_lflag |= ECHO;
+    }
+    else
+    {
+        term.c_lflag &= ~ECHO;
+    }
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
+}
+
+void SigIntHandler()
+{
+    printf("SIGINT detect.\n");
+    Processing = 0;
 }
 
 int main(int argc, char *argv[])
@@ -1868,7 +1883,8 @@ int main(int argc, char *argv[])
     GyroEnable = 0;
     memset(BakupProconData, 0, sizeof(BakupProconData));
 
-    EchoOff();
+    Echo(0);
+    signal(SIGINT, SigIntHandler);
 
     pthread_mutex_init(&MouseMtx, NULL);
     pthread_mutex_init(&UsbMtx, NULL);
@@ -2032,6 +2048,8 @@ EXIT:
 
     pthread_mutex_destroy(&MouseMtx);
     pthread_mutex_destroy(&UsbMtx);
+
+    Echo(1);
 
     printf("Procon Converter exit.\n");
     return 0;
