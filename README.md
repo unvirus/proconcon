@@ -13,11 +13,10 @@
 Ver 0.09 2022/11/25  
 旧バージョン、動作にはプロコンが必要です。  
   
-Ver 0.20 2024/02/03    
-Raspberry Pi OS 64Bitでも利用できるようにしました。  
-プログラムの終了処理を修正しました。  
-SSHから実行している場合でもCTRL＋Cで正しく終了します。  
-**proconcon.outと同じ場所にflashrom.binを配置してください。**   
+Ver 0.21 2024/05/31    
+以下の機能を追加しました。  
+7キー　低速連射  
+8キー　高速連射  
     
 ## 必要な物
 ラズベリーパイ 4B     
@@ -70,6 +69,8 @@ sudo ./proconcon.out
 | 2             | Capture       |                                                   |  
 | 3             | -             |                                                   |  
 | 4             | +             |                                                   | 
+| 7             |               | Rapid Fire (Slow)                                 |
+| 8             |               | Rapid Fire (High)                                 |
 | 9             |               | Mouse Lの単射、連射入れ替え                        | 
 | WASD          | Stick L       |                                                   | 
 | SHIFT L       |               | Move slowly with SHIFT L + WASD                   | 
