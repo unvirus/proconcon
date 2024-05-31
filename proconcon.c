@@ -25,7 +25,8 @@ ver 0.16 2023/05/06 マウスを上下に強く動かすと座標が変になる
 ver 0.17 2023/07/08 冗長なソースコードを整理しました。センターリングホールドモードは使いにくいので削除した 
 ver 0.18 2023/10/17 SHIFTキーを押している間、ゆっくり動作が中断されない不具合を修正した 
 ver 0.19 2024/01/28 操作中にターミナルで余計な文字が出ないようにした、64BitOSで動作確認した 
-ver 0.20 2024/02/03 プログラムの終了処理を調整した      
+ver 0.20 2024/02/03 プログラムの終了処理を調整した 
+ver 0.21 2024/05/31 低速連射モード追加 
 */ 
 
 #include <stdio.h>
@@ -55,7 +56,7 @@ ver 0.20 2024/02/03 プログラムの終了処理を調整した
 マウスの座標系とは異なるのでユーザー毎に調整が必要になる
 */
 #define X_SENSITIVITY           (17.2f)     //マウス操作、左右感度
-#define Y_SENSITIVITY           (20.2f)     //マウス操作、上下感度
+#define Y_SENSITIVITY           (20.5f)     //マウス操作、上下感度
 #define Y_FOLLOWING             (1.00f)     //マウス操作、上下追従補正
 
 //スティック入力値
@@ -90,7 +91,7 @@ ver 0.20 2024/02/03 プログラムの終了処理を調整した
 #define PAD_INPUT_WAIT_MARGIN   (500000)
 
 #define INERTIA_CANCEL_ENABLE			//自動サブ慣性キャンセル機能を無効にする場合はコメントアウトする
-#define SQUID_ROLL_ENABLE               //自動イカロール機能を無効にする場合はコメントアウトする
+//#define SQUID_ROLL_ENABLE               //自動イカロール機能を無効にする場合はコメントアウトする
 
 #define DELEY_FOR_AFTER_JUMP	(50)	//ジャンプ後、慣性キャンセルを行うようになるまでの時間、16ms単位
 #define DELEY_FOR_AFTER_MAIN_WP	(12)	//メイン攻撃後、慣性キャンセルを行うようになるまでの時間、16ms単位
@@ -212,7 +213,8 @@ int Straight;
 int StraightHalf;
 int Diagonal;
 int DiagonalHalf;
-int RapidFire;
+int RapidFireCnt;
+int RapidFireWait;
 int MWBtnToggle;
 int ReturnToBase;
 int ReturnToBaseCnt;
@@ -320,17 +322,29 @@ void* KeybordThread(void *p)
                 ReturnToBase = 1;
             }
 
+            if (KeyMap[KEY_7])
+            {
+                RapidFireWait = 4;
+            }
+
+            if (KeyMap[KEY_8])
+            {
+                RapidFireWait = 1;
+            }
+
             if (KeyMap[KEY_9])
             {
                 if (MWBtnToggle)
                 {
                     //main weapon button(Mouse L) is single shot mode
                     MWBtnToggle = 0;
+                    RapidFireCnt = 0;
                 }
                 else
                 {
                     //main weapon button(Mouse L) is rapid fire mode
                     MWBtnToggle = 1;
+                    RapidFireCnt = 0;
                 }
                 printf("MWBtnToggle=%d\n", MWBtnToggle);
             }
@@ -1410,15 +1424,16 @@ void InertiaCancel(ProconData *pPad)
     {
     case 0:
     case 1:
+    case 2:
         pPad->R = 1;
         InertiaCancelCnt++;
         break;
-    case 2:
     case 3:
     case 4:
     case 5:
     case 6:
     case 7:
+    case 8:
         pPad->R = 1;
         pPad->ZL = 1;
         InertiaCancelCnt++;
@@ -1448,6 +1463,24 @@ void DoSquidRoll(ProconData *pPad)
         RollTick = 0;
         RollKeyTick = 0;
     }
+}
+
+unsigned char DoRapidFire(void)
+{
+    RapidFireCnt ++;
+
+    if(RapidFireCnt <= RapidFireWait)
+    {
+        return 1;
+    }
+    else
+    {
+        if (RapidFireCnt >= (RapidFireWait << 1))
+        {
+            RapidFireCnt = 0;
+        }
+    }
+    return 0;
 }
 
 void ProconInput(ProconData *pPad)
@@ -1639,15 +1672,7 @@ void ProconInput(ProconData *pPad)
         else
         {
             //メイン連射
-            if (RapidFire != 0)
-            {
-                pPad->ZR = 1;
-                RapidFire = 0;
-            }
-            else
-            {
-                RapidFire = 1;
-            }
+            pPad->ZR = DoRapidFire();
         }
 
         MainWpTick = InputTick;
@@ -1686,15 +1711,7 @@ void ProconInput(ProconData *pPad)
         if (MWBtnToggle == 0)
         {
             //メイン連射
-            if (RapidFire != 0)
-            {
-                pPad->ZR = 1;
-                RapidFire = 0;
-            }
-            else
-            {
-                RapidFire = 1;
-            }
+            pPad->ZR = DoRapidFire();
         }
         else
         {
@@ -1854,6 +1871,7 @@ void Echo(int enable)
 void SigIntHandler()
 {
     printf("SIGINT detect.\n");
+    system(GADGET_DETACH);
     Processing = 0;
 }
 
@@ -1882,6 +1900,9 @@ int main(int argc, char *argv[])
     HidMode = 0;
     GyroEnable = 0;
     memset(BakupProconData, 0, sizeof(BakupProconData));
+
+    RapidFireCnt = 0;
+    RapidFireWait = 1;
 
     Echo(0);
     signal(SIGINT, SigIntHandler);
